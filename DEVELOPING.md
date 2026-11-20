@@ -40,6 +40,14 @@ Before release, inspect the icon at home-screen size and check headings, links, 
 
 See the [branding guide](BRANDING.md) for visual specifications and icon generation, and the [Outline API reference](https://www.getoutline.com/developers) for API documentation.
 
+## Commits and release versions
+
+Always use Conventional Commits (`<type>[optional scope][!]: <description>`). Use `feat` for features and `fix` for bug fixes; mark breaking changes with `!` or a `BREAKING CHANGE:` footer describing the incompatibility and migration.
+
+Release versions follow Semantic Versioning (`MAJOR.MINOR.PATCH`): bump MAJOR for breaking changes, MINOR for backward-compatible features, and PATCH for backward-compatible bug fixes. Review all changes since the previous release and use the highest required bump. Documentation and maintenance commits do not automatically require a release.
+
+When preparing a release, update `MARKETING_VERSION` in `Margin.xcodeproj/project.pbxproj` consistently across build configurations. Do not bump it for every commit. Keep the numeric platform build number (`CURRENT_PROJECT_VERSION`) separate: TestFlight builds of the same release version use increasing build numbers. SemVer prerelease labels such as `1.2.0-beta.1` belong in release labels; keep the Xcode marketing version numeric (`1.2.0`).
+
 ## TestFlight CLI and agent skill
 
 Use the installed Xcode toolchain; no Fastlane or additional package installation is needed. Create the App Store Connect app record for `us.cwill.margin` first, and use an Apple Developer account with permission to upload builds and manage the required signing assets. Sign into Xcode Settings → Accounts, or export all three API-key variables:
