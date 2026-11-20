@@ -1,0 +1,39 @@
+name: Publish Margin site
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/**
+      - Margin/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Include the app icon
+        run: cp Margin/Assets.xcassets/AppIcon.appiconset/AppIcon.png site/icon.png
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5
+        id: deployment
