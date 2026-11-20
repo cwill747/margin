@@ -6,6 +6,8 @@
 
 **Space for a second thought.**
 
+[![Join the TestFlight beta](https://img.shields.io/badge/TestFlight-Join_the_beta-007AFF?style=for-the-badge&logo=apple&logoColor=white)](https://testflight.apple.com/join/gPusnWHR)
+
 Margin is an independent Outline companion for iPhone and iPad mini. Browse your workspace, keep a reference beside what you’re reading, save pages for offline use, and create or edit documents.
 
 Requires iOS 27 or newer. Margin is not an official Outline client.
