@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.library(name: "MarginCore", targets: ["MarginCore"])],
     targets: [
-        .target(name: "MarginCore", path: "Margin", exclude: ["Appearance.swift", "MarginApp.swift", "ReaderView.swift", "Workspace.swift", "ComposeView.swift", "SignInViews.swift", "DocumentEditor.swift", "Assets.xcassets", "Acknowledgements.txt"], sources: ["OutlineAPI.swift", "GatewayConfiguration.swift", "OAuthSession.swift"]),
+        .target(name: "MarginCore", path: "Margin", exclude: ["Appearance.swift", "ReadingPalette.swift", "MarginApp.swift", "ReaderView.swift", "Workspace.swift", "ComposeView.swift", "SignInViews.swift", "DocumentEditor.swift", "Assets.xcassets", "Acknowledgements.txt"], sources: ["OutlineAPI.swift", "GatewayConfiguration.swift", "OAuthSession.swift"]),
         .testTarget(name: "MarginCoreTests", dependencies: ["MarginCore"], path: "Tests")
     ],
     swiftLanguageModes: [.v5]

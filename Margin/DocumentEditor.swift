@@ -4,8 +4,11 @@ struct DocumentEditor: View {
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Bindable var workspace: Workspace
     let original: OutlineDocument
+    let isVisible: Bool
     let onSaved: (OutlineDocument) -> Void
     let onClose: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @AccessibilityFocusState private var titleFocused: Bool
     @State private var title = ""
     @State private var text = ""
     @State private var revision: Int?
@@ -19,28 +22,31 @@ struct DocumentEditor: View {
     @State private var editor = EditorCommands()
     @State private var showLink = false
     @State private var link = "https://"
+    init(workspace: Workspace, original: OutlineDocument, isVisible: Bool,
+         onSaved: @escaping (OutlineDocument) -> Void, onClose: @escaping () -> Void) {
+        self.workspace = workspace; self.original = original; self.isVisible = isVisible
+        self.onSaved = onSaved; self.onClose = onClose
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+           ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] == "preview" {
+            _preview = State(initialValue: true)
+        }
+        #endif
+    }
     private var recoveryURL: URL { URL.applicationSupportDirectory.appendingPathComponent("edit-\(original.id).json") }
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                TextField("Document title", text: $title).font(.system(.title2, design: .serif)).padding()
-                if original.publishedAt == nil {
-                    HStack {
-                        Picker("Collection", selection: $collection) {
-                            Text("Private draft").tag(String?.none)
-                            ForEach(workspace.collections) { Text($0.name).tag(Optional($0.id)) }
-                        }
-                        Toggle("Publish", isOn: $publish).disabled(collection == nil)
-                    }.padding(.horizontal)
-                }
-                if let error { Text(error).foregroundStyle(.red).font(.callout).padding().textSelection(.enabled) }
+                if dynamicTypeSize.isAccessibilitySize {
+                    ScrollView { editorHeader }.frame(maxHeight: 200).scrollEdgeEffectHidden()
+                } else { editorHeader }
                 if preview {
-                    ScrollView { MarkdownBody(text: text, fontSize: 18, baseURL: workspace.api?.baseURL).padding() }
+                    ScrollView { MarkdownBody(text: text, fontSize: 18, baseURL: workspace.api?.baseURL).padding() }.scrollEdgeEffectHidden()
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack {
-                            format("Bold", "bold", "**", "**")
-                            format("Italic", "italic", "_", "_")
+                            format("Bold", "bold", "**", "**").keyboardShortcut("b", modifiers: .command)
+                            format("Italic", "italic", "_", "_").keyboardShortcut("i", modifiers: .command)
                             format("Strikethrough", "strikethrough", "~~", "~~")
                             format("Heading", "textformat.size", "## ", "")
                             format("Bullet list", "list.bullet", "- ", "")
@@ -53,24 +59,27 @@ struct DocumentEditor: View {
                             Button("Divider", systemImage: "minus") { editor.insert("\n\n---\n\n") }.labelStyle(.iconOnly)
                             Button("Undo", systemImage: "arrow.uturn.backward") { editor.view?.undoManager?.undo() }.labelStyle(.iconOnly)
                             Button("Redo", systemImage: "arrow.uturn.forward") { editor.view?.undoManager?.redo() }.labelStyle(.iconOnly)
-                        }.buttonStyle(.bordered).controlSize(.regular).padding(.horizontal).padding(.vertical, 8)
+                        }.buttonStyle(ReaderActionStyle()).controlSize(.regular).padding(.horizontal).padding(.vertical, 8)
                     }
                     NativeDocumentText(text: $text, commands: editor).padding(.horizontal, 12)
                 }
             }
             .appSurface()
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Read", systemImage: "chevron.left") {
-                        if hasChanges { confirmClose = true } else { onClose() }
-                    }.disabled(saving)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(preview ? "Write" : "Preview", systemImage: preview ? "pencil" : "eye") { preview.toggle() }.disabled(saving)
-                }
-                ToolbarItem(placement: .topBarPinnedTrailing) {
-                    Button(saving ? "Saving…" : "Save", systemImage: "checkmark") { save() }
-                        .disabled(saving || !ready || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if isVisible {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Read", systemImage: "chevron.left") {
+                            if hasChanges { confirmClose = true } else { onClose() }
+                        }.disabled(saving)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(preview ? "Write" : "Preview", systemImage: preview ? "pencil" : "eye") { editor.view?.resignFirstResponder(); preview.toggle() }.disabled(saving)
+                    }
+                    ToolbarItem(placement: .topBarPinnedTrailing) {
+                        Button(saving ? "Saving…" : "Save", systemImage: "checkmark") { save() }
+                            .disabled(saving || !ready || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .keyboardShortcut("s", modifiers: .command)
+                    }
                 }
             }
             .disabled(saving)
@@ -93,8 +102,9 @@ struct DocumentEditor: View {
                 if let data = try? Data(contentsOf: recoveryURL), let draft = try? JSONDecoder().decode(EditRecovery.self, from: data) {
                     title = draft.title; text = draft.text; revision = draft.revision; collection = draft.collection; publish = draft.publish
                 }
-                ready = true
+                ready = true; titleFocused = true
             }
+            .announceAccessibilityChanges(error)
             .onChange(of: EditRecovery(title: title, text: text, revision: revision, collection: collection, publish: publish)) { _, value in
                 guard ready else { return }
                 do {
@@ -103,6 +113,21 @@ struct DocumentEditor: View {
                     var url = recoveryURL; var flags = URLResourceValues(); flags.isExcludedFromBackup = true; try url.setResourceValues(flags)
                 } catch { self.error = "Could not save local recovery: \(error.localizedDescription)" }
             }
+        }
+    }
+    private var editorHeader: some View {
+        VStack(spacing: 0) {
+            TextField("Document title", text: $title, axis: .vertical).font(.system(.title2, design: .serif)).fixedSize(horizontal: false, vertical: true).padding().accessibilityLabel("Document title").accessibilityFocused($titleFocused)
+            if original.publishedAt == nil {
+                (dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading)) : AnyLayout(HStackLayout())) {
+                    Picker("Collection", selection: $collection) {
+                        Text("Private draft").tag(String?.none)
+                        ForEach(workspace.collections) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    Toggle("Publish", isOn: $publish).disabled(collection == nil)
+                }.padding(.horizontal)
+            }
+            if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(palette.foreground).font(.callout).padding().textSelection(.enabled) }
         }
     }
     private var hasChanges: Bool {
@@ -118,7 +143,7 @@ struct DocumentEditor: View {
                 let updated = try await workspace.update(original, title: title, text: text, revision: revision, publish: publish, collection: collection)
                 // A cache-cleanup failure must never make a successful save look retryable.
                 try? FileManager.default.removeItem(at: recoveryURL)
-                onSaved(updated); onClose()
+                onSaved(updated); onClose(); AccessibilityNotification.Announcement("Document saved").post()
             } catch { self.error = error.localizedDescription }
             saving = false
         }
@@ -166,6 +191,11 @@ struct NativeDocumentText: UIViewRepresentable {
         view.tintColor = UIColor(palette.accent)
         context.coordinator.text = $text; commands.view = view
         if view.text != text { view.text = text }
+    }
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) {
+        view.resignFirstResponder()
+        view.accessibilityElementsHidden = true
+        view.delegate = nil
     }
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
     final class Coordinator: NSObject, UITextViewDelegate {

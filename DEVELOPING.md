@@ -20,7 +20,7 @@ The project uses development team `5XZ5XQ2F3F` and bundle ID `us.cwill.margin`. 
 
 ## Verification
 
-Run `swift test` and a local Xcode build before pushing.
+Run `swift test` and a local Xcode build before pushing. For UI changes, also run `scripts/check-accessibility <dedicated-simulator-UDID>` and complete the changed flow in the [accessibility checklist](ACCESSIBILITY.md). The shared Margin scheme includes the UI audit target.
 
 Core tests cover API pagination and redirects, gateway header isolation, session cookies, OAuth PKCE, revision-checked patches, title presentation, and offline hierarchy serialization.
 

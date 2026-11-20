@@ -56,6 +56,17 @@ struct LocalDraft: Codable, Equatable {
 
     init() {
         networkPolicy.setOffline(workOffline)
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            workOffline = false
+            if ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] != "connect" {
+                showDemo()
+                expandedSections = ["getting-started", "ideas"]
+                documents[0].text = "## A useful heading\n\nRead a [reference](https://example.com).\n\n> A readable quotation.\n\n- [x] Completed item\n- [ ] Next item\n\n```swift\nlet answer = 42\n```\n\n| Topic | Notes |\n| --- | --- |\n| Access | Everyone |"
+            }
+            return
+        }
+        #endif
         if let host = UserDefaults.standard.string(forKey: "workspace"),
            let url = try? OutlineAPI.workspaceURL(host) {
             let gateway = GatewayConfiguration.load(for: url)
@@ -160,6 +171,15 @@ struct LocalDraft: Codable, Equatable {
         return hits.map(\.document)
     }
     func load(_ document: OutlineDocument) async throws -> OutlineDocument {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            switch ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] {
+            case "error": throw APIError(message: "This page could not be loaded. Try again.")
+            case "loading": try await Task.sleep(for: .seconds(30))
+            default: break
+            }
+        }
+        #endif
         if let id = queue.resolvedIDs[document.id],
            let resolved = documents.first(where: { $0.id == id }) ?? saved.first(where: { $0.id == id }) {
             return try await load(resolved)

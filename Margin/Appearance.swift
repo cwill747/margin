@@ -1,46 +1,5 @@
 import SwiftUI
 
-extension Color {
-    init(rgb: UInt32) {
-        self.init(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
-    }
-}
-
-enum ReadingPalette: String, CaseIterable, Identifiable {
-    case system, paper, sepia, night
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
-    var scheme: ColorScheme? {
-        switch self { case .system: nil; case .night: .dark; default: .light }
-    }
-    var background: Color {
-        switch self {
-        case .system: Color(uiColor: .systemBackground)
-        case .paper: Color(rgb: 0xFAF8F2)
-        case .sepia: Color(rgb: 0xEFE2C6)
-        case .night: Color(rgb: 0x172321)
-        }
-    }
-    var foreground: Color {
-        switch self {
-        case .system: .primary
-        case .paper: Color(rgb: 0x253C37)
-        case .sepia: Color(rgb: 0x493B2C)
-        case .night: Color(rgb: 0xE5EAE2)
-        }
-    }
-    var accent: Color {
-        if self == .system {
-            return Color(uiColor: UIColor { traits in
-                traits.userInterfaceStyle == .dark
-                    ? UIColor(red: 167/255, green: 205/255, blue: 187/255, alpha: 1)
-                    : UIColor(red: 41/255, green: 102/255, blue: 94/255, alpha: 1)
-            })
-        }
-        return self == .night ? Color(rgb: 0xA7CDBB) : Color(rgb: 0x29665E)
-    }
-}
-
 struct AppearanceSettings: View {
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @AppStorage("readingFontSize") private var fontSize = 18.0
@@ -64,7 +23,7 @@ struct AppearanceSettings: View {
         } header: {
             Label("Appearance", systemImage: "textformat.size")
         } footer: {
-            Text("Color themes apply throughout Margin. System follows your device appearance. Text size applies to document reading and also follows your device’s accessibility size.")
+            Text("Color themes apply throughout Margin. System follows your device appearance. Text size applies to document reading and also follows your device’s accessibility size.").font(.footnote).accessibilityIdentifier("appearance-help")
         }
     }
     @Environment(\.colorScheme) private var colorScheme
@@ -75,6 +34,7 @@ struct AppSurface: ViewModifier {
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     func body(content: Content) -> some View {
         content
+            .scrollEdgeEffectStyle(.hard, for: .all)
             .foregroundStyle(palette.foreground)
             .tint(palette.accent)
             .backgroundStyle(palette.background)
@@ -89,13 +49,10 @@ extension View {
     func appSurface() -> some View { modifier(AppSurface()) }
 }
 
-extension ReadingPalette {
-    var surface: Color {
-        switch self {
-        case .system: Color(uiColor: .secondarySystemGroupedBackground)
-        case .paper: Color(rgb: 0xF1EEE5)
-        case .sepia: Color(rgb: 0xE6D6B6)
-        case .night: Color(rgb: 0x22332F)
+extension View {
+    func announceAccessibilityChanges(_ message: String?) -> some View {
+        onChange(of: message) { _, value in
+            if let value, !value.isEmpty { AccessibilityNotification.Announcement(value).post() }
         }
     }
 }

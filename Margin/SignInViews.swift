@@ -30,13 +30,14 @@ import AuthenticationServices
 }
 
 struct GatewayFields: View {
+    @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Binding var configuration: GatewayConfiguration
     var body: some View {
         ForEach($configuration.headers) { $header in
             VStack(alignment: .leading) {
                 HStack {
                     TextField("Header name", text: $header.name).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Remove header", systemImage: "minus.circle") { configuration.headers.removeAll { $0.id == header.id } }.labelStyle(.iconOnly)
+                    Button("Remove header", systemImage: "minus.circle") { configuration.headers.removeAll { $0.id == header.id } }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                 }
                 SecureField("Header value", text: $header.value).textInputAutocapitalization(.never).autocorrectionDisabled()
             }
@@ -47,11 +48,12 @@ struct GatewayFields: View {
                 configuration.headers.append(.init(name: name))
             }
         }
-        Text("Headers are stored in Keychain and sent only to this workspace’s native API and OAuth token requests. Browser sign-in uses your workspace’s normal login.").font(.footnote).foregroundStyle(.secondary)
+        Text("Headers are stored in Keychain and sent only to this workspace’s native API and OAuth token requests. Browser sign-in uses your workspace’s normal login.").font(.footnote).foregroundStyle(palette.secondary)
     }
 }
 
 struct GatewayLoginView: View {
+    @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     let origin: URL
     var outlineCompletion: ((String, [GatewayCookie]) async throws -> Void)? = nil
     let completion: ([GatewayCookie]) -> Void
@@ -61,11 +63,11 @@ struct GatewayLoginView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Text(model.address.isEmpty ? origin.host! : model.address).font(.caption).lineLimit(1).padding(8)
-                if outlineCompletion != nil { Text("Sign in below, then tap Connect to open your workspace.").font(.footnote).foregroundStyle(.secondary).padding(.horizontal) }
-                if let error = model.error { Text(error).font(.callout).foregroundStyle(.red).padding() }
+                Text(model.address.isEmpty ? origin.host! : model.address).font(.caption).lineLimit(nil).padding(8)
+                if outlineCompletion != nil { Text("Sign in below, then tap Connect to open your workspace.").font(.footnote).foregroundStyle(palette.secondary).padding(.horizontal) }
+                if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(palette.foreground).padding() }
                 GatewayWebView(origin: origin, model: model)
-            }.navigationTitle("Sign in to Outline").navigationBarTitleDisplayMode(.inline)
+            }.appSurface().announceAccessibilityChanges(model.error).navigationTitle("Sign in to Outline").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {

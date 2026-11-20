@@ -39,24 +39,24 @@ struct ConnectView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    Image(systemName: "book.pages.fill").font(.system(size: 48)).foregroundStyle(.tint).padding(.top, 48)
+                    Image(systemName: "book.pages.fill").font(.system(size: 48)).foregroundStyle(.tint).padding(.top, 48).accessibilityLabel("Margin")
                     VStack(alignment: .leading, spacing: 12) {
                         Text("A little more room\nto think.").font(.system(.largeTitle, design: .serif, weight: .medium))
-                        Text("Your Outline workspace, made for the way you read, connect, and explore.").font(.title3).foregroundStyle(.secondary)
+                        Text("Your Outline workspace, made for the way you read, connect, and explore.").font(.title3).foregroundStyle(palette.secondary)
                     }
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("CONNECT YOUR WORKSPACE").font(.caption.weight(.semibold)).tracking(2).foregroundStyle(.secondary)
-                        TextField("https://your-team.getoutline.com", text: $host).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("Workspace address")
+                        Text("Connect your workspace").font(.headline).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+                        TextField("https://…", text: $host).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel("Workspace address")
                         Divider()
                         Picker("Sign-in method", selection: $useSSO) {
                             Text("Sign in").tag(true)
                             Text("API key").tag(false)
                         }.pickerStyle(.segmented)
                         if useSSO {
-                            Text("Sign in with your existing Outline account.").font(.footnote).foregroundStyle(.secondary)
+                            Text("Sign in with your existing Outline account.").font(.footnote).foregroundStyle(palette.secondary)
                         } else {
                             SecureField("Outline API key", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            Text("Create a key in Outline’s Settings → API & Apps. Your key is stored in this device’s Keychain.").font(.footnote).foregroundStyle(.secondary)
+                            Text("Create a key in Outline’s Settings → API & Apps. Your key is stored in this device’s Keychain.").font(.footnote).foregroundStyle(palette.secondary)
                         }
                         DisclosureGroup("Advanced connection settings") {
                             VStack(alignment: .leading, spacing: 16) {
@@ -65,11 +65,11 @@ struct ConnectView: View {
                                     do { gatewayURL = try OutlineAPI.workspaceURL(host) }
                                     catch { self.error = error.localizedDescription }
                                 }
-                                if !gateway.cookies.isEmpty { Text("Sign-in session ready").font(.footnote).foregroundStyle(.secondary) }
+                                if !gateway.cookies.isEmpty { Text("Sign-in session ready").font(.footnote).foregroundStyle(palette.secondary) }
                             }.padding(.top)
                         }
                     }.padding(22).background(palette.surface, in: RoundedRectangle(cornerRadius: 22))
-                    if let error { Text(error).foregroundStyle(.red).font(.callout) }
+                    if let error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(palette.foreground).font(.callout) }
                     Button {
                         error = nil
                         if useSSO {
@@ -88,11 +88,13 @@ struct ConnectView: View {
                     } label: {
                         HStack { Spacer(); if connecting { ProgressView() }; Text(connecting ? "Connecting…" : (useSSO ? "Sign in to Outline" : "Open workspace")).bold(); Image(systemName: "arrow.right"); Spacer() }.padding(8)
                     }.buttonStyle(.borderedProminent).disabled(connecting || host.isEmpty || (!useSSO && token.isEmpty))
-                    Button("Explore a sample workspace") { workspace.showDemo() }.disabled(connecting).frame(maxWidth: .infinity)
-                    Text("MARGIN · An independent Outline companion").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    Button { workspace.showDemo() } label: {
+                        Text("Explore a sample workspace").frame(maxWidth: .infinity, minHeight: 44).contentShape(Rectangle())
+                    }.disabled(connecting)
+                    Text("MARGIN · An independent Outline companion").font(.footnote).foregroundStyle(palette.secondary).frame(maxWidth: .infinity)
                 }.padding(28).frame(maxWidth: 540)
                 .frame(maxWidth: .infinity)
-            }.background(palette.background)
+            }.scrollEdgeEffectHidden().background(palette.background)
         }
         .sheet(isPresented: Binding(get: { gatewayURL != nil }, set: { if !$0 { gatewayURL = nil } })) {
             if let gatewayURL { GatewayLoginView(origin: gatewayURL) { gateway.cookies = $0 } }
@@ -105,6 +107,7 @@ struct ConnectView: View {
                 }, completion: { _ in })
             }
         }
+        .announceAccessibilityChanges(error)
         .onChange(of: host) { _, _ in gateway.cookies = [] }
         .onDisappear { browser.cancel() }
     }
@@ -113,6 +116,8 @@ struct ConnectView: View {
 struct LibraryView: View {
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var workspace: Workspace
     @State private var selected: OutlineDocument?
     @State private var companion: OutlineDocument?
@@ -124,6 +129,7 @@ struct LibraryView: View {
     @State private var revealSearch = false
     @State private var expandedNodes: Set<String> = []
     @FocusState private var searchFocused: Bool
+    @AccessibilityFocusState private var searchAccessibilityFocused: Bool
     @State private var results: [OutlineDocument] = []
     @State private var searching = false
     @State private var searchError: String?
@@ -131,26 +137,47 @@ struct LibraryView: View {
     @State private var composing = false
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var visibility = NavigationSplitViewVisibility.all
+    init(workspace: Workspace) {
+        self.workspace = workspace
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            let screen = ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] ?? "library"
+            if ["reader", "reference", "error", "loading", "offline", "editor", "preview"].contains(screen) {
+                _selected = State(initialValue: workspace.documents.first)
+                _compactColumn = State(initialValue: .detail)
+                _visibility = State(initialValue: .detailOnly)
+            }
+            if screen == "reference" { _companion = State(initialValue: workspace.documents.last) }
+            if screen == "settings" { _showSettings = State(initialValue: true); _compactColumn = State(initialValue: .detail) }
+            if screen == "compose" { _composing = State(initialValue: true); _compactColumn = State(initialValue: .detail) }
+            if screen == "empty" { _query = State(initialValue: "no-matching-document") }
+            if screen == "search" { _query = State(initialValue: "Field") }
+            if screen == "offline", let document = workspace.documents.first {
+                workspace.saved = [document]; workspace.workOffline = true
+            }
+        }
+        #endif
+    }
     var visibleDocuments: [OutlineDocument] {
         let source = query.isEmpty ? (savedOnly ? workspace.saved : workspace.documents) : results
         return source.filter { collection == nil || $0.collectionId == collection }
     }
     private func sectionToggle(_ title: String, id: String) -> some View {
         Button {
-            withAnimation {
+            withAnimation(reduceMotion ? nil : .default) {
                 if workspace.expandedSections.contains(id) { workspace.expandedSections.remove(id) }
                 else { workspace.expandedSections.insert(id) }
             }
         } label: {
             HStack {
-                Text(title)
+                Text(title).font(.headline).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("collection-title-" + id)
                 Spacer()
-                Image(systemName: workspace.expandedSections.contains(id) ? "chevron.down" : "chevron.right")
+                Image(systemName: workspace.expandedSections.contains(id) ? "chevron.down" : "chevron.right").font(.system(size: 17, weight: .semibold))
             }.frame(minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(title)
             .accessibilityValue(workspace.expandedSections.contains(id) ? "Expanded" : "Collapsed")
-            .accessibilityHint("Double-tap to expand or collapse this collection")
+            .accessibilityHint("Expand or collapse this collection")
     }
     private func sidebarDocument(_ node: OutlineTreeNode, collectionID: String) -> OutlineDocument {
         workspace.documents.first(where: { $0.id == node.id }) ?? node.document(collectionID: collectionID)
@@ -161,28 +188,38 @@ struct LibraryView: View {
                             if let nodes = workspace.trees[collection.id] {
                                 ForEach(sidebarRows(nodes), id: \.node.id) { row in
                                     let document = sidebarDocument(row.node, collectionID: collection.id)
-                                    HStack(spacing: 8) {
+                                    HStack(alignment: .top, spacing: 8) {
                                         if !row.node.children.isEmpty {
                                             Button {
                                                 if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
                                             } label: {
-                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right")
-                                                    .frame(width: 44, height: 44)
+                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right").font(.system(size: 17, weight: .semibold))
+                                                    .frame(width: 44, height: 44).contentShape(Rectangle())
                                             }.buttonStyle(.plain)
-                                                .accessibilityLabel("Toggle children of " + row.node.title)
+                                                .accessibilityLabel("Children of " + row.node.title)
+                                                .accessibilityValue(expandedNodes.contains(row.node.id) ? "Expanded" : "Collapsed")
                                         }
                                         Button { openSidebarDocument(document) } label: {
-                                            Label(row.node.title, systemImage: "doc.text").lineLimit(2)
-                                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                                                .contentShape(Rectangle())
+                                            HStack {
+                                                Group {
+                                                    if dynamicTypeSize.isAccessibilitySize { Text(row.node.title) }
+                                                    else { Label(row.node.title, systemImage: "doc.text").lineLimit(2) }
+                                                }.fixedSize(horizontal: false, vertical: true)
+                                                Spacer(minLength: 0)
+                                                if selected?.id == document.id { Image(systemName: "checkmark").accessibilityHidden(true) }
+                                            }
+                                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                            .contentShape(Rectangle())
                                         }.buttonStyle(.plain)
+                                        .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
+                                        .accessibilityAction(named: "Keep beside") { companion = document }
                                     }
-                                    .padding(.leading, CGFloat(row.depth) * 16)
+                                    .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * 16)
                                     .id("page-" + document.id)
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
                                     .contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                                 }
-                                if nodes.isEmpty { Text("No documents").foregroundStyle(.secondary) }
+                                if nodes.isEmpty { Text("No documents").foregroundStyle(palette.secondary) }
                             } else if workspace.busy { ProgressView() }
                             }
                         } header: {
@@ -214,6 +251,7 @@ struct LibraryView: View {
                 results = matches; searching = false
             } catch is CancellationError { } catch { if !Task.isCancelled { searchError = error.localizedDescription; searching = false } }
         }
+        .announceAccessibilityChanges(searchError)
         .alert("Workspace", isPresented: Binding(get: { workspace.error != nil }, set: { if !$0 { workspace.error = nil } })) {
             Button("OK") { workspace.error = nil }
         } message: { Text(workspace.error ?? "") }
@@ -272,13 +310,13 @@ struct LibraryView: View {
         ScrollViewReader { proxy in
             List {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search your knowledge", text: $query)
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.secondary).accessibilityHidden(true)
+                    TextField("Search", text: $query, prompt: Text("Search").foregroundStyle(palette.secondary), axis: .vertical).fixedSize(horizontal: false, vertical: true).accessibilityLabel("Search your knowledge")
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .focused($searchFocused).submitLabel(.search)
+                        .focused($searchFocused).accessibilityFocused($searchAccessibilityFocused).submitLabel(.search).frame(minHeight: 44)
                     if !query.isEmpty {
                         Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
-                            .labelStyle(.iconOnly).buttonStyle(.plain)
+                            .labelStyle(.iconOnly).buttonStyle(.plain).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                     }
                 }
                 .padding(.vertical, 6)
@@ -304,20 +342,28 @@ struct LibraryView: View {
                 Section(query.isEmpty ? (savedOnly ? "Saved reading" : "Your documents") : "Search results") {
                     if workspace.busy && workspace.documents.isEmpty { ProgressView("Loading your workspace…") }
                     if searching { ProgressView("Searching workspace…") }
-                    if let searchError { Text(searchError).foregroundStyle(.red) }
+                    if let searchError { Label(searchError, systemImage: "exclamationmark.circle").foregroundStyle(palette.foreground) }
                     ForEach(visibleDocuments) { document in
                         Button { openSidebarDocument(document) } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 Image(systemName: "doc.text").foregroundStyle(.tint).padding(.top, 3)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(document.title).font(.body.weight(.medium)).lineLimit(2)
-                                    Text(workspace.collections.first { $0.id == document.collectionId }?.name ?? "Document").font(.caption).foregroundStyle(.secondary)
+                                    Text(document.title).font(.body.weight(.medium)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2).fixedSize(horizontal: false, vertical: true)
+                                    Text(workspace.collections.first { $0.id == document.collectionId }?.name ?? "Document").font(.caption).foregroundStyle(palette.secondary)
                                 }
                             }.padding(.vertical, 5)
-                        }.id("page-" + document.id).contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
+                        }.accessibilityAction(named: "Keep beside") { companion = document }
+                        .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
+                        .id("page-" + document.id).contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                     }
                     if visibleDocuments.isEmpty && !searching && !workspace.busy {
-                        ContentUnavailableView(savedOnly ? "Your reading shelf" : "No documents", systemImage: savedOnly ? "bookmark" : "magnifyingglass", description: Text(savedOnly ? "Save a document to read it here, even offline." : "Try another collection or search."))
+                        VStack(spacing: 12) {
+                            Image(systemName: savedOnly ? "bookmark" : "magnifyingglass").font(.title).accessibilityHidden(true)
+                            Text(savedOnly ? "Your reading shelf" : "No documents").font(.headline)
+                                .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("empty-title")
+                            Text(savedOnly ? "Save a document to read it here, even offline." : "Try another collection or search.")
+                                .font(.body).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("empty-help")
+                        }.frame(maxWidth: .infinity).multilineTextAlignment(.center).padding(.vertical, 24)
                     }
                 }
                 }
@@ -341,6 +387,7 @@ struct LibraryView: View {
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 proxy.scrollTo(sidebarScrollTarget, anchor: revealSearch ? .top : .center)
+                if revealSearch { searchAccessibilityFocused = true; searchFocused = true }
             }
             .refreshable { await workspace.refresh() }
             .toolbar {
@@ -389,7 +436,7 @@ struct LibraryView: View {
             if let avatar = workspace.avatar {
                 Image(uiImage: avatar).resizable().scaledToFill().frame(width: 30, height: 30).clipShape(Circle())
             } else { Image(systemName: "person.crop.circle").font(.title2) }
-        }.accessibilityLabel("Settings for " + (workspace.profile?.name ?? workspace.name))
+        }.frame(minWidth: 44, minHeight: 44).accessibilityIdentifier("workspace-settings").accessibilityLabel("Settings for " + (workspace.profile?.name ?? workspace.name))
     }
 }
 
@@ -429,10 +476,10 @@ private struct WorkspaceSettings: View {
                 Group {
                 Section("Workspace") {
                     HStack {
-                        if let avatar = workspace.avatar { Image(uiImage: avatar).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle()) }
+                        if let avatar = workspace.avatar { Image(uiImage: avatar).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(Circle()).accessibilityHidden(true) }
                         VStack(alignment: .leading) {
                             if let name = workspace.profile?.name { Text(name).font(.headline) }
-                            Text(workspace.name).foregroundStyle(.secondary)
+                            Text(workspace.name).foregroundStyle(palette.secondary)
                         }
                     }
                 }
@@ -446,10 +493,10 @@ private struct WorkspaceSettings: View {
                     Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await workspace.refresh() } }
                         .disabled(workspace.workOffline || workspace.syncing || workspace.busy)
                     if workspace.syncing { ProgressView("Syncing \(workspace.syncCompleted) of \(workspace.syncTotal)", value: Double(workspace.syncCompleted), total: Double(max(1, workspace.syncTotal))) }
-                    Text("\(workspace.saved.count) pages available offline")
-                    if let error = workspace.syncError { Text(error).foregroundStyle(.red) }
-                } header: { Text("Offline") } footer: {
-                    Text("Work offline pauses sync and queues changes on this device until you turn it off. Manual: sync individual pages using their download button. Pages I open: automatically save each page you read. Everything: sync all accessible pages. Saved pages update while the app is open and connected. Images and attachments still require a connection.")
+                    Text("\(workspace.saved.count) pages available offline").font(.body).accessibilityIdentifier("offline-count")
+                    if let error = workspace.syncError { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(palette.foreground) }
+                } header: { Label("Offline", systemImage: "arrow.down.circle").font(.headline).accessibilityIdentifier("offline-heading") } footer: {
+                    Text("Work offline pauses sync and queues changes on this device until you turn it off. Manual: sync individual pages using their download button. Pages I open: automatically save each page you read. Everything: sync all accessible pages. Saved pages update while the app is open and connected. Images and attachments still require a connection.").font(.footnote).accessibilityIdentifier("offline-help")
                 }
                 if !workspace.saved.isEmpty {
                     Section {
@@ -478,6 +525,7 @@ private struct WorkspaceSettings: View {
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Back", systemImage: "chevron.left", action: onClose) } }
+            .announceAccessibilityChanges(workspace.syncError)
             .onChange(of: workspace.offlineMode) { _, _ in Task { await workspace.syncOffline() } }
         }
     }

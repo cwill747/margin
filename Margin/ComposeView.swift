@@ -19,17 +19,17 @@ struct ComposeView: View {
             Form {
                 Group {
                 Section {
-                    TextField("Untitled document", text: $title).font(.title2).focused($focusTitle)
+                    TextField("Title", text: $title, prompt: Text("Title").foregroundStyle(palette.secondary), axis: .vertical).font(.title2).focused($focusTitle).accessibilityLabel("Document title")
                     Picker("Collection", selection: $collection) {
                         Text("Private draft").tag(String?.none)
                         ForEach(workspace.collections) { Text($0.name).tag(Optional($0.id)) }
                     }
                 }
-                Section("Your notes · Markdown supported") {
+                Section {
                     MarkdownEditor(text: $text).frame(minHeight: 260)
-                }
+                } header: { Text("Markdown").font(.headline) }
                 Section { Toggle("Publish to collection", isOn: $publish).disabled(collection == nil) }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                if let error { Section { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(palette.foreground) } }
             
                 }.listRowBackground(palette.surface)
             }
@@ -50,7 +50,7 @@ struct ComposeView: View {
                                 let document = try await workspace.create(title: title, text: text, collection: collection, publish: publish)
                                 do { try workspace.storeDraft(LocalDraft()) }
                                 catch { workspace.error = "Document created, but the local draft could not be cleared: \(error.localizedDescription)" }
-                                onCreated(document); onClose()
+                                onCreated(document); onClose(); AccessibilityNotification.Announcement("Document created").post()
                             } catch { self.error = error.localizedDescription }
                             saving = false
                         }
@@ -70,6 +70,7 @@ struct ComposeView: View {
                 title = workspace.draft.title; text = workspace.draft.text; collection = workspace.draft.collection
                 restored = true; focusTitle = true
             }
+            .announceAccessibilityChanges(error)
             .onChange(of: LocalDraft(title: title, text: text, collection: collection)) { _, draft in
                 guard restored else { return }
                 do { try workspace.storeDraft(draft) }
@@ -102,6 +103,11 @@ private struct MarkdownEditor: UIViewRepresentable {
         view.tintColor = UIColor(palette.accent)
         context.coordinator.text = $text
         if view.text != text { view.text = text }
+    }
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) {
+        view.resignFirstResponder()
+        view.accessibilityElementsHidden = true
+        view.delegate = nil
     }
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
     final class Coordinator: NSObject, UITextViewDelegate {

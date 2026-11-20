@@ -1,0 +1,33 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ $# -ne 1 ]]; then
+  echo "Usage: scripts/check-accessibility <booted-dedicated-simulator-UDID>" >&2
+  echo "Choose a disposable simulator from: xcrun simctl list devices available" >&2
+  exit 2
+fi
+# Use a dedicated simulator: UI tests write sample drafts and preferences.
+device="$1"
+appearance="$(xcrun simctl ui "$device" appearance)"
+contrast="$(xcrun simctl ui "$device" increase_contrast)"
+restore() {
+  xcrun simctl ui "$device" appearance "$appearance"
+  xcrun simctl ui "$device" increase_contrast "$contrast"
+}
+trap restore EXIT
+result="build/accessibility-$(date +%Y%m%d-%H%M%S)"
+mkdir -p build
+swift test
+xcrun simctl ui "$device" appearance light
+xcrun simctl ui "$device" increase_contrast disabled
+status=0
+xcodebuild -project Margin.xcodeproj -scheme Margin \
+  -destination "platform=iOS Simulator,id=$device" \
+  -parallel-testing-enabled NO -resultBundlePath "$result-light.xcresult" test || status=$?
+xcrun simctl ui "$device" appearance dark
+xcrun simctl ui "$device" increase_contrast enabled
+xcodebuild -project Margin.xcodeproj -scheme Margin \
+  -destination "platform=iOS Simulator,id=$device" \
+  -parallel-testing-enabled NO -resultBundlePath "$result-dark-contrast.xcresult" \
+  -only-testing:MarginUITests/AccessibilityTests/testReaderPalettes test || status=$?
+exit "$status"
