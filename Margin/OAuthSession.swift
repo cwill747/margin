@@ -10,7 +10,7 @@ struct OAuthCredentials: Codable {
 }
 
 struct OAuthAttempt {
-    static let callback = "us.cwill.duoutline://oauth/callback"
+    static let callback = "us.cwill.margin://oauth/callback"
     let verifier: String
     let state: String
     init() throws {
@@ -30,7 +30,7 @@ struct OAuthAttempt {
         return parts.url!
     }
     func code(from url: URL) throws -> String {
-        guard url.scheme == "us.cwill.duoutline", url.host == "oauth", url.path == "/callback",
+        guard url.scheme == "us.cwill.margin", url.host == "oauth", url.path == "/callback",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
               items.filter({ $0.name == "state" }).count == 1,
               items.first(where: { $0.name == "state" })?.value == state else {

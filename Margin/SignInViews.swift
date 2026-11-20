@@ -12,7 +12,7 @@ import AuthenticationServices
         guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) else { throw APIError(message: "Open Margin before starting sign-in.") }
         anchor = window
         return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callback: .customScheme("us.cwill.duoutline")) { [weak self] url, error in
+            let session = ASWebAuthenticationSession(url: url, callback: .customScheme("us.cwill.margin")) { [weak self] url, error in
                 self?.session = nil
                 if let url { continuation.resume(returning: url) }
                 else { continuation.resume(throwing: error ?? APIError(message: "Sign-in was cancelled.")) }

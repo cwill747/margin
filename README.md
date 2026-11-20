@@ -43,7 +43,7 @@ Workspace connection settings also support API keys, system-browser OAuth, and c
 
 For an API key, create a personal key in Outline’s **Settings → API & Apps**. Reading requires collection and document read access; creating and editing documents also requires document write access.
 
-For system-browser OAuth, register an OAuth application in your Outline instance with client type **public**, PKCE support, and redirect URI `us.cwill.duoutline://oauth/callback`. Enter its client ID in Margin. Older Outline versions without public-client support require an upgrade or the API-key option.
+For system-browser OAuth, register an OAuth application in your Outline instance with client type **public**, PKCE support, and redirect URI `us.cwill.margin://oauth/callback`. Enter its client ID in Margin. Older Outline versions without public-client support require an upgrade or the API-key option.
 
 Custom headers are stored in Keychain and restricted to your workspace’s HTTPS origin.
 

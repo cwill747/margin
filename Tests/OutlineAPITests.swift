@@ -162,7 +162,7 @@ extension OutlineAPITests {
         XCTAssertEqual(items.first(where: { $0.name == "code_challenge" })?.value?.count, 43)
         XCTAssertFalse(items.contains(where: { $0.name == "client_secret" || $0.name == "code_verifier" }))
         XCTAssertEqual(try attempt.code(from: URL(string: "\(OAuthAttempt.callback)?state=\(attempt.state)&code=ok")!), "ok")
-        for callback in ["\(OAuthAttempt.callback)?state=wrong&code=ok", "us.cwill.duoutline://other/callback?state=\(attempt.state)&code=ok", "\(OAuthAttempt.callback)?state=\(attempt.state)&code=a&code=b", "\(OAuthAttempt.callback)?state=\(attempt.state)&error=access_denied"] {
+        for callback in ["\(OAuthAttempt.callback)?state=wrong&code=ok", "us.cwill.margin://other/callback?state=\(attempt.state)&code=ok", "\(OAuthAttempt.callback)?state=\(attempt.state)&code=a&code=b", "\(OAuthAttempt.callback)?state=\(attempt.state)&error=access_denied"] {
             XCTAssertThrowsError(try attempt.code(from: URL(string: callback)!))
         }
         XCTAssertNotEqual(try OAuthAttempt().state, attempt.state)

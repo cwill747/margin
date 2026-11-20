@@ -16,7 +16,7 @@ xcodebuild -project Margin.xcodeproj -scheme Margin \
   -destination 'generic/platform=iOS' -allowProvisioningUpdates build
 ```
 
-The project uses development team `5XZ5XQ2F3F` and bundle ID `us.cwill.duoutline`. An Apple development certificate, working Xcode account, and provisioning profile are required for a device build. Configure your own development team when building under another Apple account.
+The project uses development team `5XZ5XQ2F3F` and bundle ID `us.cwill.margin`. An Apple development certificate, working Xcode account, and provisioning profile are required for a device build. Configure your own development team when building under another Apple account.
 
 ## Verification
 
@@ -33,7 +33,7 @@ Before release, inspect the icon at home-screen size and check headings, links, 
 ## Implementation notes
 
 - The Xcode project, scheme, target, source folder, and app entry point use Margin. The Swift package is MarginCore.
-- The bundle ID, OAuth callback, Keychain identifiers, and storage paths retain their existing values for compatibility with installed credentials and saved data.
+- The bundle ID is `us.cwill.margin` and the OAuth callback is `us.cwill.margin://oauth/callback`. Keychain service identifiers and storage paths retain their existing values. Existing Outline OAuth registrations must use the new callback URI.
 - OAuth validates callback state, exchanges codes with an S256 PKCE verifier, and refreshes expiring tokens. No OAuth client secret is embedded in the app.
 - Offline caches use file protection and are excluded from backups.
 - Paired reading uses side-by-side panes when the detail area is at least 760 points wide, and a document/reference switcher below that width.
