@@ -1,0 +1,83 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  cat <<'HELP'
+Usage:
+  scripts/testflight archive BUILD_NUMBER
+  scripts/testflight upload ARCHIVE_PATH
+
+archive builds a signed Release archive without uploading. BUILD_NUMBER must be
+an unused App Store Connect build number (one to three numeric components).
+Artifacts go into build/testflight/<BUILD_NUMBER>/; existing runs are preserved.
+upload sends that archive to App Store Connect for TestFlight processing.
+
+Authentication: use the account configured in Xcode, or set all three:
+  ASC_KEY_PATH       Absolute path to your App Store Connect API .p8 key
+  ASC_KEY_ID         API key ID
+  ASC_ISSUER_ID      API issuer ID (team API key)
+No credentials are copied into the repository. Xcode handles signing/provisioning.
+HELP
+}
+fail() { echo "testflight: $*" >&2; exit 1; }
+[[ $# -gt 0 ]] || { usage; exit 1; }
+case "$1" in
+  -h|--help|help) usage; exit 0 ;;
+  archive|upload) action=$1 ;;
+  *) fail "Unknown command: $1 (use --help)" ;;
+esac
+[[ $# -eq 2 && -n $2 ]] || fail "$action requires exactly one argument (use --help)"
+root=$(cd "$(dirname "$0")/.." && pwd)
+command -v xcodebuild >/dev/null || fail "Install/select full Xcode before running this command."
+auth=(-allowProvisioningUpdates)
+if [[ -n ${ASC_KEY_PATH:-}${ASC_KEY_ID:-}${ASC_ISSUER_ID:-} ]]; then
+  [[ -n ${ASC_KEY_PATH:-} && -n ${ASC_KEY_ID:-} && -n ${ASC_ISSUER_ID:-} ]] ||
+    fail "Set ASC_KEY_PATH, ASC_KEY_ID and ASC_ISSUER_ID together."
+  [[ $ASC_KEY_PATH = /* && -f $ASC_KEY_PATH && -r $ASC_KEY_PATH ]] ||
+    fail "ASC_KEY_PATH must point to a readable absolute file path."
+  auth+=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+fi
+
+if [[ $action = archive ]]; then
+  number=$2
+  [[ $number =~ ^[0-9]{1,4}(\.[0-9]{1,2}){0,2}$ && ! $number =~ ^0 ]] ||
+    fail "Use a positive build number: up to four digits, optionally followed by two components of up to two digits."
+  parent="$root/build/testflight"
+  mkdir -p "$parent"
+  run="$parent/$number"
+  mkdir "$run" || fail "Build directory already exists; choose another build number or inspect $run."
+  archive="$run/Margin.xcarchive"
+  xcodebuild -project "$root/Margin.xcodeproj" -scheme Margin \
+    -configuration Release -destination 'generic/platform=iOS' \
+    -archivePath "$archive" -derivedDataPath "$root/build/testflight/DerivedData" \
+    "${auth[@]}" "CURRENT_PROJECT_VERSION=$number" \
+    archive 2>&1 | tee "$run/archive.log"
+  echo "Archive ready: $archive"
+  echo "Upload with: scripts/testflight upload \"$archive\""
+else
+  [[ -d $2 ]] || fail "Archive not found: $2"
+  archive=$(cd "$2" && pwd)
+  info="$archive/Info.plist"
+  read_info() { /usr/libexec/PlistBuddy -c "Print :ApplicationProperties:$1" "$info"; }
+  bundle=$(read_info CFBundleIdentifier) || fail "Invalid Xcode app archive."
+  [[ $bundle = us.cwill.margin ]] || fail "Expected us.cwill.margin; found $bundle."
+  version=$(read_info CFBundleShortVersionString)
+  number=$(read_info CFBundleVersion)
+  run=$(mktemp -d "$(dirname "$archive")/upload.XXXXXX")
+  cat > "$run/ExportOptions.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>upload</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+  <key>uploadSymbols</key><true/>
+</dict></plist>
+PLIST
+  echo "Uploading $bundle $version ($number) from $archive"
+  xcodebuild -exportArchive -archivePath "$archive" \
+    -exportPath "$run/export" -exportOptionsPlist "$run/ExportOptions.plist" \
+    "${auth[@]}" 2>&1 | tee "$run/upload.log"
+  echo "Upload completed for $version ($number). Check processing and compliance in App Store Connect before distributing to testers."
+fi
