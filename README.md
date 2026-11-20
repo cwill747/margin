@@ -10,6 +10,22 @@ Margin is an independent Outline companion for iPhone and iPad mini. Browse your
 
 Requires iOS 27 or newer. Margin is not an official Outline client.
 
+## Screenshots
+
+Browse collections, read documents, and edit Markdown on the iPhone Duo simulator, unfolded and on the front display.
+
+<p align="center">
+  <img src="docs/screenshots/reading.png" alt="Margin on iPhone Duo, with the collection sidebar beside the What is Outline document" width="900">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/reading-front.png" alt="Margin on the iPhone Duo front display, reading the What is Outline document" width="360">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/editing-unfolded.png" alt="Margin on unfolded iPhone Duo, editing Getting Started with Markdown formatting controls" width="900">
+</p>
+
 ## Get started
 
 Open Margin and choose **Explore a sample workspace** to try it without credentials, or connect your own Outline workspace.
