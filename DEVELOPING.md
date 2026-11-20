@@ -36,7 +36,21 @@ Before release, inspect the icon at home-screen size and check headings, links, 
 - The bundle ID is `us.cwill.margin` and the OAuth callback is `us.cwill.margin://oauth/callback`. Keychain service identifiers and storage paths retain their existing values. Existing Outline OAuth registrations must use the new callback URI.
 - OAuth validates callback state, exchanges codes with an S256 PKCE verifier, and refreshes expiring tokens. No OAuth client secret is embedded in the app.
 - Offline caches use file protection and are excluded from backups.
-- Paired reading uses side-by-side panes when the detail area is at least 760 points wide, and a document/reference switcher below that width.
+- Paired reading uses side-by-side panes in regular horizontal size classes, and a document/reference switcher in compact size classes or at accessibility text sizes. Both readers stay mounted across layout changes to preserve reading and editing state.
+
+## iPhone Duo design checks
+
+Follow Apple's [Design for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111466/), [Prepare your app for iPhone Duo](https://developer.apple.com/videos/play/tech-talks/111461/), and [Layout guidance](https://developer.apple.com/design/human-interface-guidelines/layout).
+
+Use size classes for navigation and pane layout, not screen dimensions, device names, or orientation. Geometry may divide the available content area between panes; the reading column's maximum width is a readability constraint, not a device breakpoint. Keep foreground content inside the system safe area, including asymmetric leading and trailing insets. Native navigation, toolbars, sheets, menus, and alerts supply adaptive placement and fold avoidance.
+
+Before release, use Device Hub to check the following with the sample workspace and a real workspace. A successful build alone does not verify these interactions:
+
+- Outer display in both orientations; inner display open, rotated, and partially folded. Verify sidebar navigation, reading, paired reading, search, Settings, and sign-in sheets.
+- Split View on both left and right, plus reduced height with pinned picture-in-picture. Check that controls remain reachable and content clears the camera and system bars.
+- Fold and unfold while scrolled in each reading pane and while editing an unsaved document. Preserve selection, scroll position, text, and cursor; retain the same actions in compact and regular layouts.
+- Accessibility text sizes, VoiceOver, and keyboard presentation. Check the document/reference switcher, sidebar disclosure controls, editor fields, and formatting strip for clipping or unreachable actions.
+- Inspect custom reference and editor controls near the fold. Unlike native toolbars, custom rows need explicit pose testing; adopt reserved-region handling if controls intersect the curved region.
 
 See the [branding guide](BRANDING.md) for visual specifications and icon generation, and the [Outline API reference](https://www.getoutline.com/developers) for API documentation.
 

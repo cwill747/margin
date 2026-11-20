@@ -123,7 +123,6 @@ struct LibraryView: View {
     @State private var sidebarScrollTarget = "sidebar-search"
     @State private var revealSearch = false
     @State private var expandedNodes: Set<String> = []
-    @State private var isPortrait = false
     @FocusState private var searchFocused: Bool
     @State private var results: [OutlineDocument] = []
     @State private var searching = false
@@ -147,7 +146,7 @@ struct LibraryView: View {
                 Text(title)
                 Spacer()
                 Image(systemName: workspace.expandedSections.contains(id) ? "chevron.down" : "chevron.right")
-            }.frame(minHeight: 36).contentShape(Rectangle())
+            }.frame(minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityLabel(title)
             .accessibilityValue(workspace.expandedSections.contains(id) ? "Expanded" : "Collapsed")
@@ -168,13 +167,13 @@ struct LibraryView: View {
                                                 if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
                                             } label: {
                                                 Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right")
-                                                    .frame(width: 32, height: 44)
+                                                    .frame(width: 44, height: 44)
                                             }.buttonStyle(.plain)
                                                 .accessibilityLabel("Toggle children of " + row.node.title)
                                         }
                                         Button { openSidebarDocument(document) } label: {
                                             Label(row.node.title, systemImage: "doc.text").lineLimit(2)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                                 .contentShape(Rectangle())
                                         }.buttonStyle(.plain)
                                     }
@@ -197,7 +196,6 @@ struct LibraryView: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
-        .onGeometryChange(for: Bool.self) { $0.size.height > $0.size.width } action: { isPortrait = $0 }
         .onChange(of: companion) { _, value in
             if value != nil { visibility = .detailOnly }
         }
@@ -260,7 +258,7 @@ struct LibraryView: View {
         showSettings = false
         selected = document
         compactColumn = .detail
-        if isPortrait || sizeClass == .compact { visibility = .detailOnly }
+        if sizeClass == .compact { visibility = .detailOnly }
     }
     private var searchButton: some View {
         Button("Search", systemImage: "magnifyingglass") {

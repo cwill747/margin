@@ -2,6 +2,8 @@ import SwiftUI
 import MarkdownUI
 
 struct DuoReader: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Bindable var workspace: Workspace
     let document: OutlineDocument?
@@ -11,7 +13,7 @@ struct DuoReader: View {
     var body: some View {
         GeometryReader { geometry in
             if let document {
-                let wide = companion != nil && geometry.size.width >= 760
+                let wide = companion != nil && sizeClass == .regular && !dynamicTypeSize.isAccessibilitySize
                 let paneWidth = max(0, wide ? (geometry.size.width - 1) / 2 : geometry.size.width)
                 let mainVisible = wide || companion == nil || !showReference
                 VStack(spacing: 0) {
