@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Try Margin</title><link rel="stylesheet" href="demo.css"></head>
+<body>
+<main class="demo">
+<div class="demo-controls"><div><strong>Try Margin</strong><span class="badge">Interactive demo</span></div><div class="actions"><button id="fold" aria-pressed="false">Fold phone</button><button id="reset">Reset demo</button></div></div>
+<p class="hint" id="hint">A little more room. Keep a page beside another to compare them.</p>
+<div class="stage"><section class="device" id="device" aria-label="Unfolded phone">
+<span class="hinge" aria-hidden="true"></span><div class="screen" id="screen" data-theme="paper">
+<div class="workspace" id="workspace">
+<aside id="library" aria-label="Document library"><div class="library-heading"><button id="settings-open" aria-label="Settings"></button><strong>Margin</strong><button id="library-toggle" aria-label="Hide library" aria-expanded="true"></button></div><input type="search" id="search" placeholder="Search your knowledge" aria-label="Search documents"><div id="document-list"></div><div class="filter"><button id="all" aria-pressed="true">All pages</button><button id="saved" aria-pressed="false">Saved</button></div><p class="local-note">Your own little workspace.<br>Edits stay in this browser.</p></aside>
+<div class="readers" id="readers"><div class="pane-switch" id="pane-switch" hidden><button id="document-tab" aria-pressed="true">Document</button><button id="reference-tab" aria-pressed="false">Reference</button></div><div class="panes"><section class="reader" id="primary" aria-label="Document"></section><section class="reader reference" id="reference" aria-label="Reference" hidden></section></div></div>
+</div>
+<div class="side-rail"><div class="duo-status" aria-hidden="true"><strong>9:41</strong><svg viewBox="0 0 44 44"><path d="M5 30a18 18 0 1 1 34 0"/><path d="M14 22q8-8 16 0m-12 5q4-4 8 0"/><circle cx="22" cy="32" r="1"/></svg><span>••••</span></div><button id="back-library" class="glass" aria-label="Show library"></button><nav class="rail-actions glass" aria-label="Document actions"><button id="new" aria-label="New document"></button><button id="search-open" aria-label="Search"></button><button id="pin-page" aria-label="Keep beside"></button><button id="save-page" aria-label="Save offline"></button><button id="edit-page" aria-label="Edit document"></button><button id="share-page" aria-label="Share document"></button></nav></div>
+<dialog id="settings"><form method="dialog"><div class="dialog-heading"><h2>Settings</h2><button aria-label="Close settings">Done</button></div><p class="eyebrow">Appearance</p><label for="theme">Color theme</label><select id="theme"><option value="system">System</option><option value="paper">Paper</option><option value="sepia">Sepia</option><option value="night">Night</option></select><label for="font-size">Text size <output id="font-value">18 pt</output></label><input id="font-size" type="range" min="14" max="30" step="2" value="18"><div class="preview"><h3>Space for a second thought.</h3><p>Your knowledge, comfortably within reach.</p></div><p class="local-note">This demo uses sample documents. No sign-in needed.</p></form></dialog>
+<dialog id="reset-dialog"><form method="dialog"><h2>Start fresh?</h2><p>This removes your demo edits, drafts, saved pages, and appearance choices.</p><div class="actions"><button value="cancel">Cancel</button><button value="reset" class="solid">Reset demo</button></div></form></dialog>
+</div></section></div>
+<p id="announcement" class="announcement" role="status" aria-live="polite">Explore the library, or edit the page to make it yours.</p>
+<p class="caption">An app-only web recreation. <a href="https://testflight.apple.com/join/gPusnWHR" target="_blank" rel="noopener">Try the native app</a></p>
+</main><script src="demo.js"></script>
+</body></html>
