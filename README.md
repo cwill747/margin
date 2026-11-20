@@ -1,57 +1,56 @@
+<p align="center">
+  <img src="Margin/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="Margin logo" width="160" height="160">
+</p>
+
 # Margin
 
-An independent native Outline companion for iPhone and iPad mini, built with SwiftUI. The workspace has a searchable collection browser, paired document reading, local saved copies, native draft creation, and native document editing. Web views are reserved for sign-in.
+**Space for a second thought.**
 
-Brand direction and visual specifications: [Branding guide](BRANDING.md).
+Margin is an independent Outline companion for iPhone and iPad mini. Browse your workspace, keep a reference beside what you’re reading, save pages for offline use, and create or edit documents.
 
-Settings → Appearance offers System, Paper, Sepia, and Night app-wide color themes and a 14–30 pt reading size with a live preview. Theme preferences persist across all app screens; reading size applies to both document panes.
+Requires iOS 27 or newer. Margin is not an official Outline client.
 
-## Run locally
+## Get started
 
-Open `Margin.xcodeproj` in Xcode 27.1 or newer, with the iOS 27.1 or newer SDK for full-screen Duo support. Select the iPhone Duo or iPad mini simulator and run the Margin scheme. The deployment target is iOS 27. Use **Explore a sample workspace** to try the interface without credentials.
+Open Margin and choose **Explore a sample workspace** to try it without credentials, or connect your own Outline workspace.
 
-```sh
-swift test
-xcodebuild -project Margin.xcodeproj -scheme Margin \
-  -destination 'generic/platform=iOS Simulator' build
-xcodebuild -project Margin.xcodeproj -scheme Margin \
-  -destination 'generic/platform=iOS' -allowProvisioningUpdates build
-```
+Enter your workspace’s HTTPS address and choose **Sign in to Outline**. Complete your workspace’s sign-in, including Cloudflare if present, then tap **Connect**. No API key or OAuth registration is needed. Credentials are stored in Keychain; expired or revoked sessions require signing in again.
 
-Apple SDKs and signing use the installed Xcode toolchain. Xcode resolves the pinned MarkdownUI package for native Markdown rendering. The project uses the same development team as TP-7 VoiceSync (`5XZ5XQ2F3F`) and bundle ID `us.cwill.duoutline`. An Apple development certificate, working Xcode account, and provisioning profile are required for a device build.
+Passkeys and security keys have limited support in the sign-in window. Use an authenticator code where your identity provider offers one.
 
-## Connect
+## Read and write
 
-Enter your Outline workspace’s HTTPS origin and choose **Sign in to Outline**. Complete Cloudflare (if present) and Outline’s own SSO in the same window, then tap **Connect**. Margin captures only the exact workspace’s secure Outline session and gateway cookies, verifies access through the native API, and stores credentials in Keychain. No API key or OAuth client registration is needed for this flow. Expired or revoked sessions require signing in again. Passkeys/security keys remain limited in the embedded browser; use an authenticator code where your identity provider offers one.
+- Search and browse collections and documents.
+- Choose **Keep beside** to keep a reference close. Wider screens show both pages side by side; narrower screens let you switch between them.
+- Open documents for reading, then edit them or create a new draft with Markdown formatting controls. Unsent drafts are saved locally for recovery.
+- Open Settings from the profile button. Under **Appearance**, choose System, Paper, Sepia, or Night and adjust reading text from 14 to 30 pt. Your preferences apply to both document panes.
 
-API keys and advanced OAuth remain available.
+## Read offline
 
-For advanced system-browser OAuth SSO under Workspace connection settings, register an OAuth application in your Outline instance with client type **public**, PKCE support, and redirect URI `us.cwill.duoutline://oauth/callback`. Enter its client ID in Margin. Sign-in opens Apple’s system authentication browser, where you use the workspace’s existing identity provider. The app validates callback state, exchanges the code with an S256 PKCE verifier, and refreshes expiring tokens. No OAuth client secret is embedded in the app. Older Outline releases that do not support public clients need an upgrade or the API-key connection option.
+Settings offers three offline modes:
 
-For API keys, create a personal key in Outline’s **Settings → API & Apps**. Reading requires collection/document read access; draft creation also requires document write access.
+- **Manual:** save individual pages with Sync.
+- **Pages I open:** save pages as you read them.
+- **Everything:** sync all accessible pages.
 
-Advanced connection settings support custom headers and refreshing the workspace sign-in session. Headers are kept in Keychain and restricted to the exact workspace HTTPS origin. The default sign-in flow does not require users to know about their gateway.
+Saved pages update during workspace refresh while Margin is open. **Sync now** retries updates, and failed updates keep the previous saved copy. Saved pages and the collection browser remain available after restarting the app.
 
-## Reading and offline use
+Images and attachments are not downloaded for offline use. Disconnecting clears saved documents, collections, and profile information from the device.
 
-Documents open read-only. Editing, new-document creation, and Settings use the main document pane rather than modal sheets. Collection sections start collapsed after a fresh login and preserve expansion state across app launches. Duo uses native adaptive toolbars; the profile button opens Settings.
+## Other connection options
 
-Settings offers three offline modes: Manual (per-page Sync), Pages I open (save on opening), and Everything (sync all accessible pages). Existing saved pages update during workspace refresh while the app is open. Sync now retries updates; failures retain previous cached copies. The hierarchy and profile are cached so saved content remains reachable after restart. Caches use file protection and are excluded from backups. Disconnect clears the document, hierarchy, and profile caches. Images and attachments are not downloaded for offline use.
+Workspace connection settings also support API keys, system-browser OAuth, and custom gateway headers.
 
-## Current limitations
+For an API key, create a personal key in Outline’s **Settings → API & Apps**. Reading requires collection and document read access; creating and editing documents also requires document write access.
 
-- Native reading supports GitHub-flavored Markdown. Outline-specific rich blocks and protected attachments do not yet have full native fidelity.
-- The current native editing surface is Markdown with formatting controls. The requested Outline-style visual editor and comments remain unfinished. Unsent drafts are saved locally for recovery.
-- Advanced system-browser OAuth requires a registered public client. The primary web-session sign-in does not. Session sign-in and native reading have been verified against a real workspace.
-- Paired reading uses side-by-side panes when the detail area is at least 760 points wide, and a document/reference switcher below that width.
-- Real-workspace and physical device validation remain required before release.
+For system-browser OAuth, register an OAuth application in your Outline instance with client type **public**, PKCE support, and redirect URI `us.cwill.duoutline://oauth/callback`. Enter its client ID in Margin. Older Outline versions without public-client support require an upgrade or the API-key option.
 
-## Validation
+Custom headers are stored in Keychain and restricted to your workspace’s HTTPS origin.
 
-Core tests cover API pagination and redirects, gateway header isolation, session cookies, OAuth PKCE, revision-checked patches, title presentation, and offline hierarchy serialization. Run `swift test` and a local Xcode build before pushing.
+## Limitations
 
-The app has run against a real workspace on the iOS 27.2 Duo simulator. Earlier signed device builds passed automatic provisioning and `codesign --verify --deep --strict`; physical-device installation remains unverified.
+Margin supports GitHub-flavored Markdown. Some Outline-specific rich blocks and protected attachments may not display fully. Editing uses Markdown with formatting controls; a visual editor and comments are not yet available.
 
-Simulator builds must keep code signing enabled. Disabling signing removes the application-identifier entitlement and makes Keychain writes fail with OSStatus -34018. Debug builds support `--verify-keychain` to test a temporary write/read/delete without touching saved credentials.
+## Development
 
-API reference: https://www.getoutline.com/developers
+See [DEVELOPING.md](DEVELOPING.md) for building, testing, and contributing to Margin.
