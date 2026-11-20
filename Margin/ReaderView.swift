@@ -156,7 +156,7 @@ struct ReaderView: View {
 
     @ViewBuilder private var readerActions: some View {
                 if let onPin { Button("Keep beside", systemImage: "rectangle.split.2x1") { onPin(document) }.labelStyle(.iconOnly) }
-                Button(isSaved ? "Sync page again" : "Sync page offline", systemImage: isSaved ? "checkmark.circle" : "arrow.down.circle") {
+                Button(workspace.workOffline ? "Queue page download" : (isSaved ? "Sync page again" : "Sync page offline"), systemImage: isSaved ? "checkmark.circle" : "arrow.down.circle") {
                     syncingPage = true
                     Task {
                         do { try await workspace.syncPage(document) }
@@ -173,7 +173,7 @@ struct ReaderView: View {
                     }
                 Button("Edit", systemImage: "square.and.pencil") { editingDocument = document }
                     .accessibilityLabel("Edit document")
-                    .disabled(document.text == nil || loading || offline)
+                    .disabled(document.text == nil || loading)
                 if let url = documentURL {
                     ShareLink(item: url).labelStyle(.iconOnly)
 
@@ -186,7 +186,7 @@ struct ReaderView: View {
         do {
             let fresh = try await workspace.load(original)
             try Task.checkCancellation()
-            loaded = fresh
+            loaded = fresh; offline = workspace.workOffline
             if isSaved { try workspace.saveOffline(fresh) }
         } catch is CancellationError { } catch {
             guard !Task.isCancelled else { return }

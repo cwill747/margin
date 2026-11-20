@@ -7,7 +7,22 @@ struct LocalDraft: Codable, Equatable {
 }
 
 @MainActor @Observable final class Workspace {
-    var api: OutlineAPI?
+    private let networkPolicy = NetworkPolicy()
+    var api: OutlineAPI? {
+        didSet { api?.networkPolicy = networkPolicy }
+    }
+    var workOffline = UserDefaults.standard.bool(forKey: "workOffline") {
+        didSet {
+            networkPolicy.setOffline(workOffline)
+            UserDefaults.standard.set(workOffline, forKey: "workOffline")
+            if !workOffline { Task { await refresh() } }
+        }
+    }
+    private(set) var queue = SyncQueue()
+    private var flushing = false
+    var pendingCount: Int { queue.changes.count + queue.downloads.count }
+    private var queueURL: URL { URL.applicationSupportDirectory.appendingPathComponent("sync-queue.json") }
+
     var collections: [OutlineCollection] = []
     var documents: [OutlineDocument] = []
     var trees: [String: [OutlineTreeNode]] = [:]
@@ -40,6 +55,7 @@ struct LocalDraft: Codable, Equatable {
     private var draftURL: URL { URL.applicationSupportDirectory.appendingPathComponent("draft.json") }
 
     init() {
+        networkPolicy.setOffline(workOffline)
         if let host = UserDefaults.standard.string(forKey: "workspace"),
            let url = try? OutlineAPI.workspaceURL(host) {
             let gateway = GatewayConfiguration.load(for: url)
@@ -52,6 +68,11 @@ struct LocalDraft: Codable, Equatable {
             }
             if let data = try? Data(contentsOf: profileURL) { profile = try? JSONDecoder().decode(OutlineProfile.self, from: data) }
             if let data = try? Data(contentsOf: avatarURL) { avatar = UIImage(data: data) }
+            if let data = try? Data(contentsOf: queueURL) {
+                do { queue = try JSONDecoder().decode(SyncQueue.self, from: data); overlayPending() }
+                catch { self.error = "Could not read queued changes: " + error.localizedDescription }
+            }
+            api?.networkPolicy = networkPolicy
             if let data = try? Data(contentsOf: draftURL) { draft = (try? JSONDecoder().decode(LocalDraft.self, from: data)) ?? LocalDraft() }
         }
     }
@@ -104,22 +125,24 @@ struct LocalDraft: Codable, Equatable {
         api = client
     }
     func refresh() async {
-        guard let api else { return }
+        guard !workOffline, !busy, let api else { return }
         let current = generation
-        busy = true
+        busy = true; error = nil; syncError = nil
         defer { if generation == current { busy = false } }
         do {
+            try await flushQueue()
+            guard !workOffline, generation == current else { return }
             async let collections: [OutlineCollection] = api.list("collections.list")
             async let documents: [OutlineDocument] = api.list("documents.list", body: ["sort": "updatedAt", "direction": "DESC"])
             async let drafts: [OutlineDocument] = api.list("documents.drafts")
             let result = try await (collections, documents, drafts)
-            guard generation == current else { return }
+            guard generation == current, !workOffline else { return }
             var trees: [String: [OutlineTreeNode]] = [:]
             for collection in result.0 {
                 let tree: Envelope<[OutlineTreeNode]> = try await api.request("collections.documents", body: ["id": collection.id])
                 trees[collection.id] = tree.data
             }
-            guard generation == current else { return }
+            guard generation == current, !workOffline else { return }
             self.trees = trees
             self.draftIDs = Set(result.2.map(\.id))
             self.collections = result.0
@@ -129,24 +152,41 @@ struct LocalDraft: Codable, Equatable {
             await refreshProfile()
             await syncOffline()
 
-        } catch { if generation == current { self.error = error.localizedDescription } }
+        } catch { if generation == current, !workOffline { self.error = error.localizedDescription; syncError = error.localizedDescription } }
     }
     func search(_ query: String) async throws -> [OutlineDocument] {
-        guard let api else { return documents.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.text ?? "").localizedCaseInsensitiveContains(query) } }
+        guard !workOffline, let api else { return documents.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.text ?? "").localizedCaseInsensitiveContains(query) } }
         let hits: [SearchHit] = try await api.list("documents.search", body: ["query": query])
         return hits.map(\.document)
     }
     func load(_ document: OutlineDocument) async throws -> OutlineDocument {
+        if let id = queue.resolvedIDs[document.id],
+           let resolved = documents.first(where: { $0.id == id }) ?? saved.first(where: { $0.id == id }) {
+            return try await load(resolved)
+        }
+        if let pending = queue.changes.first(where: { $0.document.id == document.id }) { return pending.document }
+        if workOffline {
+            guard let cached = saved.first(where: { $0.id == document.id }) ?? documents.first(where: { $0.id == document.id && $0.text != nil }) else {
+                throw APIError(message: "This page is not available offline. Queue its download or turn off Work offline.")
+            }
+            return cached
+        }
         guard let api else { return document }
         let current = generation
         let response: Envelope<OutlineDocument> = try await api.request("documents.info", body: ["id": document.id])
-        guard generation == current else { throw CancellationError() }
+        guard generation == current, !workOffline else { throw CancellationError() }
         if offlineMode != .manual || saved.contains(where: { $0.id == document.id }) {
             do { try saveOffline(response.data) } catch { syncError = error.localizedDescription }
         }
         return response.data
     }
     func create(title: String, text: String, collection: String?, publish: Bool = false) async throws -> OutlineDocument {
+        if workOffline && api != nil {
+            let document = OutlineDocument(id: "local-" + UUID().uuidString, title: title, text: text, collectionId: collection,
+                                           publishedAt: publish ? ISO8601DateFormatter().string(from: Date()) : nil)
+            try enqueue(PendingChange(original: nil, document: document, publish: publish))
+            return document
+        }
         let current = generation
         let document: OutlineDocument
         if let api {
@@ -164,6 +204,19 @@ struct LocalDraft: Codable, Equatable {
         return document
     }
     func update(_ original: OutlineDocument, title: String, text: String, revision: Int?, publish: Bool, collection: String?) async throws -> OutlineDocument {
+        guard !flushing else { throw APIError(message: "Queued changes are syncing. Try saving again when sync finishes.") }
+        if api != nil && (workOffline || queue.changes.contains(where: { $0.document.id == original.id })) {
+            var updated = original
+            updated.title = title; updated.text = text
+            if publish { updated.publishedAt = ISO8601DateFormatter().string(from: Date()); updated.collectionId = collection }
+            var base = original; base.revision = revision
+            if !queue.changes.contains(where: { $0.document.id == original.id }) {
+                _ = try DocumentChange.body(original: base, title: title, text: text, revision: revision, publish: publish, collection: collection)
+            }
+            try enqueue(PendingChange(original: base, document: updated, publish: publish))
+            if !workOffline { await refresh() }
+            return updated
+        }
         let current = generation
         var updated = original
         if let api {
@@ -181,12 +234,18 @@ struct LocalDraft: Codable, Equatable {
         return updated
     }
     func syncPage(_ document: OutlineDocument) async throws {
+        if workOffline {
+            var next = queue
+            if !next.downloads.contains(where: { $0.id == document.id }) { next.downloads.append(document) }
+            try storeQueue(next)
+            return
+        }
         let fresh = try await load(document)
         guard fresh.text != nil else { throw APIError(message: "Document content is unavailable.") }
         try saveOffline(fresh)
     }
     func syncOffline() async {
-        guard !syncing, let api else { return }
+        guard !workOffline, !syncing, queue.changes.isEmpty, let api else { return }
         let current = generation
         let targets = offlineMode == .everything ? documents : saved
         guard !targets.isEmpty else { return }
@@ -194,14 +253,15 @@ struct LocalDraft: Codable, Equatable {
         defer { if current == generation { syncing = false } }
         var failures = 0
         for document in targets {
-            guard current == generation, !Task.isCancelled else { return }
+            guard !workOffline, current == generation, !Task.isCancelled else { return }
             do {
                 let response: Envelope<OutlineDocument> = try await api.request("documents.info", body: ["id": document.id])
-                guard current == generation else { return }
+                guard current == generation, !workOffline, queue.changes.isEmpty else { return }
                 guard response.data.text != nil else { throw APIError(message: "Missing page content") }
                 try saveOffline(response.data)
             } catch is CancellationError { return
             } catch {
+                guard !workOffline else { return }
                 if let networkError = error as? URLError {
                     syncError = "Sync paused: " + networkError.localizedDescription + " Saved copies remain available."
                     return
@@ -215,13 +275,58 @@ struct LocalDraft: Codable, Equatable {
         }
         if failures > 0 { syncError = "Could not sync \(failures) of \(syncTotal) pages. Previous copies are still available; try again when connected." }
     }
+    private func storeQueue(_ next: SyncQueue) throws {
+        try writePrivate(JSONEncoder().encode(next), to: queueURL)
+        queue = next
+    }
+    private func enqueue(_ change: PendingChange) throws {
+        var next = queue; next.enqueue(change)
+        try storeQueue(next)
+        overlayPending()
+    }
+    private func overlayPending() {
+        for change in queue.changes {
+            let document = change.document
+            documents.removeAll { $0.id == document.id }; documents.insert(document, at: 0)
+            saved.removeAll { $0.id == document.id }; saved.insert(document, at: 0)
+            if document.publishedAt == nil { draftIDs.insert(document.id) } else { draftIDs.remove(document.id) }
+        }
+    }
+    private func flushQueue() async throws {
+        guard !workOffline, let api else { return }
+        flushing = true
+        defer { flushing = false }
+        let current = generation
+        while !workOffline, let change = queue.changes.first {
+            let response: Envelope<OutlineDocument> = try await api.request(change.original == nil ? "documents.create" : "documents.update", body: change.requestBody())
+            guard current == generation else { return }
+            // Persist the server copy before acknowledging the queued write.
+            try saveOffline(response.data)
+            var next = queue; next.changes.removeFirst()
+            if response.data.id != change.document.id { next.resolvedIDs[change.document.id] = response.data.id }
+            next.downloads = next.downloads.map { $0.id == change.document.id ? response.data : $0 }
+            try storeQueue(next)
+            documents.removeAll { $0.id == change.document.id }
+            documents.insert(response.data, at: 0)
+            if response.data.id != change.document.id {
+                saved.removeAll { $0.id == change.document.id }
+                try persist(saved)
+            }
+        }
+        while !workOffline, let document = queue.downloads.first {
+            let response: Envelope<OutlineDocument> = try await api.request("documents.info", body: ["id": document.id])
+            guard current == generation else { return }
+            try saveOffline(response.data)
+            var next = queue; next.downloads.removeFirst(); try storeQueue(next)
+        }
+    }
     private func writePrivate(_ data: Data, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         var url = url; var flags = URLResourceValues(); flags.isExcludedFromBackup = true; try url.setResourceValues(flags)
     }
     private func refreshProfile() async {
-        guard let api else { return }
+        guard !workOffline, let api else { return }
         let current = generation
         do {
             let result: Envelope<OutlineIdentity> = try await api.request("auth.info")
@@ -235,7 +340,7 @@ struct LocalDraft: Codable, Equatable {
             defer { session.finishTasksAndInvalidate() }
             var destination = url
             for _ in 0..<5 {
-                guard destination.scheme == "https" else { return }
+                guard !workOffline, destination.scheme == "https" else { return }
                 var request = URLRequest(url: destination); request.timeoutInterval = 20
                 // Signed storage redirects get a fresh request without workspace credentials.
                 if GatewayConfiguration.sameOrigin(destination, api.baseURL) {
@@ -262,6 +367,7 @@ struct LocalDraft: Codable, Equatable {
         saved = updated
     }
     func removeOffline(_ document: OutlineDocument) throws {
+        guard !queue.changes.contains(where: { $0.document.id == document.id }) else { throw APIError(message: "Sync pending changes before removing this copy.") }
         let updated = saved.filter { $0.id != document.id }
         try persist(updated)
         saved = updated
@@ -275,13 +381,15 @@ struct LocalDraft: Codable, Equatable {
         try url.setResourceValues(values)
     }
     func signOut() async {
+        guard pendingCount == 0 else { error = "Sync queued changes before disconnecting."; return }
         generation = UUID()
         await api?.oauth?.invalidate()
         api = nil; demo = false; collections = []; documents = []; trees = [:]; draftIDs = []; saved = []; error = nil; busy = false
         CredentialStore.delete()
         UserDefaults.standard.removeObject(forKey: "workspace")
         expandedSections = []; offlineMode = .manual; syncing = false; syncError = nil; profile = nil; avatar = nil
-        for url in [libraryURL, avatarURL, profileURL] { try? FileManager.default.removeItem(at: url) }
+        workOffline = false; queue = SyncQueue()
+        for url in [libraryURL, avatarURL, profileURL, queueURL] { try? FileManager.default.removeItem(at: url) }
         try? FileManager.default.removeItem(at: cacheURL)
         try? FileManager.default.removeItem(at: draftURL)
         draft = LocalDraft()

@@ -440,16 +440,18 @@ private struct WorkspaceSettings: View {
                 }
                 AppearanceSettings()
                 Section {
+                    Toggle("Work offline", isOn: $workspace.workOffline)
+                    if workspace.pendingCount > 0 { Text("\(workspace.pendingCount) changes queued to sync") }
                     Picker("Sync offline", selection: $workspace.offlineMode) {
                         ForEach(OfflineMode.allCases) { Text($0.title).tag($0) }
                     }
                     Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await workspace.refresh() } }
-                        .disabled(workspace.syncing || workspace.busy)
+                        .disabled(workspace.workOffline || workspace.syncing || workspace.busy)
                     if workspace.syncing { ProgressView("Syncing \(workspace.syncCompleted) of \(workspace.syncTotal)", value: Double(workspace.syncCompleted), total: Double(max(1, workspace.syncTotal))) }
                     Text("\(workspace.saved.count) pages available offline")
                     if let error = workspace.syncError { Text(error).foregroundStyle(.red) }
                 } header: { Text("Offline") } footer: {
-                    Text("Manual: sync individual pages using their download button. Pages I open: automatically save each page you read. Everything: sync all accessible pages. Saved pages update while the app is open and connected. Images and attachments still require a connection.")
+                    Text("Work offline pauses sync and queues changes on this device until you turn it off. Manual: sync individual pages using their download button. Pages I open: automatically save each page you read. Everything: sync all accessible pages. Saved pages update while the app is open and connected. Images and attachments still require a connection.")
                 }
                 if !workspace.saved.isEmpty {
                     Section {
@@ -469,7 +471,7 @@ private struct WorkspaceSettings: View {
                     Button("Open-source acknowledgements") { page = .acknowledgements }
                 }
                 Section {
-                    Button(workspace.demo ? "Leave sample workspace" : "Disconnect and clear saved documents", role: .destructive) { Task { await workspace.signOut(); onClose() } }
+                    Button(workspace.demo ? "Leave sample workspace" : "Disconnect and clear saved documents", role: .destructive) { Task { await workspace.signOut(); if workspace.api == nil { onClose() } } }
                 }
             
                 }.listRowBackground(palette.surface)

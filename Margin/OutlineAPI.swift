@@ -51,6 +51,7 @@ struct OutlineAPI {
     var gateway = GatewayConfiguration()
     var oauth: OAuthSession?
     var browserSession = false
+    var networkPolicy: NetworkPolicy?
 
     static func workspaceURL(_ input: String) throws -> URL {
         let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -65,6 +66,7 @@ struct OutlineAPI {
     }
 
     func request<T: Decodable>(_ method: String, body: [String: Any] = [:]) async throws -> Envelope<T> {
+        try networkPolicy?.check()
         var request = URLRequest(url: baseURL.appendingPathComponent("api/" + method))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
@@ -76,6 +78,7 @@ struct OutlineAPI {
         // Never forward credentials through a workspace redirect.
         let session = URLSession(configuration: configuration, delegate: NoRedirect(), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
+        try networkPolicy?.check()
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw APIError(message: "No response from your workspace.") }
         guard (200..<300).contains(response.statusCode) else {
@@ -231,4 +234,43 @@ struct LibrarySnapshot: Codable {
     var documents: [OutlineDocument]
     var trees: [String: [OutlineTreeNode]]
     var draftIDs: Set<String>
+}
+
+// Shared by API value copies so pagination also observes the offline switch.
+final class NetworkPolicy: @unchecked Sendable {
+    private let lock = NSLock()
+    private var offline = false
+    func setOffline(_ value: Bool) { lock.lock(); defer { lock.unlock() }; offline = value }
+    func check() throws {
+        lock.lock(); defer { lock.unlock() }
+        if offline { throw APIError(message: "Work offline is enabled.") }
+    }
+}
+
+struct PendingChange: Codable {
+    var original: OutlineDocument?
+    var document: OutlineDocument
+    var publish: Bool
+
+    func requestBody() throws -> [String: Any] {
+        if let original {
+            return try DocumentChange.body(original: original, title: document.title, text: document.text ?? "",
+                                           revision: original.revision, publish: publish, collection: document.collectionId)
+        }
+        var body: [String: Any] = ["title": document.title, "text": document.text ?? "", "publish": publish]
+        if let collection = document.collectionId { body["collectionId"] = collection }
+        return body
+    }
+}
+
+struct SyncQueue: Codable {
+    var resolvedIDs: [String: String] = [:]
+    var changes: [PendingChange] = []
+    var downloads: [OutlineDocument] = []
+    mutating func enqueue(_ change: PendingChange) {
+        if let index = changes.firstIndex(where: { $0.document.id == change.document.id }) {
+            changes[index].document = change.document
+            changes[index].publish = changes[index].publish || change.publish
+        } else { changes.append(change) }
+    }
 }

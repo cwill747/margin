@@ -2,6 +2,51 @@ import XCTest
 @testable import MarginCore
 
 final class OutlineAPITests: XCTestCase {
+    func testOfflinePolicyBlocksRequestsAndCanResume() async throws {
+        let policy = NetworkPolicy()
+        policy.setOffline(true)
+        var api = OutlineAPI(baseURL: URL(string: "https://unused.invalid")!, token: "")
+        api.networkPolicy = policy
+        do {
+            let _: Envelope<OutlineDocument> = try await api.request("documents.info")
+            XCTFail("Offline requests must be blocked")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Work offline is enabled.")
+        }
+        policy.setOffline(false)
+        XCTAssertNoThrow(try policy.check())
+    }
+
+    func testQueuedEditsPreserveOriginalRevisionAcrossRelaunch() throws {
+        let original = OutlineDocument(id: "page", title: "Before", text: "Original", revision: 7)
+        var edited = original; edited.text = "First edit"
+        var queue = SyncQueue()
+        queue.enqueue(PendingChange(original: original, document: edited, publish: false))
+        edited.title = "After"; edited.text = "Second edit"
+        queue.enqueue(PendingChange(original: edited, document: edited, publish: true))
+        let restored = try JSONDecoder().decode(SyncQueue.self, from: JSONEncoder().encode(queue))
+        XCTAssertEqual(restored.changes.count, 1)
+        XCTAssertEqual(restored.changes[0].original?.text, "Original")
+        let body = try restored.changes[0].requestBody()
+        XCTAssertEqual(body["lastRevision"] as? Int, 7)
+        XCTAssertEqual(body["title"] as? String, "After")
+        XCTAssertEqual(body["publish"] as? Bool, true)
+    }
+
+    func testEditingQueuedCreationRemainsOneCreation() throws {
+        var document = OutlineDocument(id: "local-page", title: "New", text: "First")
+        var queue = SyncQueue()
+        queue.enqueue(PendingChange(original: nil, document: document, publish: true))
+        document.text = "Edited"
+        queue.enqueue(PendingChange(original: document, document: document, publish: false))
+        XCTAssertEqual(queue.changes.count, 1)
+        XCTAssertNil(queue.changes[0].original)
+        let body = try queue.changes[0].requestBody()
+        XCTAssertNil(body["lastRevision"])
+        XCTAssertEqual(body["text"] as? String, "Edited")
+        XCTAssertEqual(body["publish"] as? Bool, true)
+    }
+
     func testNormalizesWorkspaceAddress() throws {
         XCTAssertEqual(try OutlineAPI.workspaceURL(" wiki.example.com \n").absoluteString, "https://wiki.example.com")
         XCTAssertEqual(try OutlineAPI.workspaceURL("https://wiki.example.com/").host, "wiki.example.com")
