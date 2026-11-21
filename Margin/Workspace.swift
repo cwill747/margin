@@ -8,9 +8,7 @@ struct LocalDraft: Codable, Equatable {
 
 @MainActor @Observable final class Workspace {
     private let networkPolicy = NetworkPolicy()
-    var api: OutlineAPI? {
-        didSet { api?.networkPolicy = networkPolicy }
-    }
+    private(set) var api: OutlineAPI?
     var workOffline = UserDefaults.standard.bool(forKey: "workOffline") {
         didSet {
             networkPolicy.setOffline(workOffline)
@@ -71,8 +69,8 @@ struct LocalDraft: Codable, Equatable {
            let url = try? OutlineAPI.workspaceURL(host) {
             let gateway = GatewayConfiguration.load(for: url)
             let oauth = OAuthSession.load(origin: url, gateway: gateway)
-            if let token = CredentialStore.read() { api = OutlineAPI(baseURL: url, token: token, gateway: gateway, browserSession: UserDefaults.standard.bool(forKey: "browserSession")) }
-            else if let oauth { api = OutlineAPI(baseURL: url, token: "", gateway: gateway, oauth: oauth) }
+            if let token = CredentialStore.read() { api = OutlineAPI(baseURL: url, token: token, gateway: gateway, browserSession: UserDefaults.standard.bool(forKey: "browserSession"), networkPolicy: networkPolicy) }
+            else if let oauth { api = OutlineAPI(baseURL: url, token: "", gateway: gateway, oauth: oauth, networkPolicy: networkPolicy) }
             if let data = try? Data(contentsOf: cacheURL) { saved = (try? JSONDecoder().decode([OutlineDocument].self, from: data)) ?? [] }
             if let data = try? Data(contentsOf: libraryURL), let snapshot = try? JSONDecoder().decode(LibrarySnapshot.self, from: data) {
                 collections = snapshot.collections; documents = snapshot.documents; trees = snapshot.trees; draftIDs = snapshot.draftIDs
@@ -83,7 +81,6 @@ struct LocalDraft: Codable, Equatable {
                 do { queue = try JSONDecoder().decode(SyncQueue.self, from: data); overlayPending() }
                 catch { self.error = "Could not read queued changes: " + error.localizedDescription }
             }
-            api?.networkPolicy = networkPolicy
             if let data = try? Data(contentsOf: draftURL) { draft = (try? JSONDecoder().decode(LocalDraft.self, from: data)) ?? LocalDraft() }
         }
     }
@@ -91,7 +88,7 @@ struct LocalDraft: Codable, Equatable {
         let url = try OutlineAPI.workspaceURL(host)
         let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { throw APIError(message: "Enter an Outline API key from Settings → API & Apps.") }
-        let client = OutlineAPI(baseURL: url, token: token, gateway: gateway, browserSession: browserSession)
+        var client = OutlineAPI(baseURL: url, token: token, gateway: gateway, browserSession: browserSession)
         let collections: [OutlineCollection] = try await client.list("collections.list")
         try gateway.save(for: url)
         try CredentialStore.save(token)
@@ -99,6 +96,7 @@ struct LocalDraft: Codable, Equatable {
         UserDefaults.standard.set(url.absoluteString, forKey: "workspace")
         expandedSections = []
         generation = UUID()
+        client.networkPolicy = networkPolicy
         self.api = client
         self.collections = collections
         demo = false
@@ -115,7 +113,7 @@ struct LocalDraft: Codable, Equatable {
         let code = try attempt.code(from: callback)
         let credentials = try await OAuthSession.exchange(origin: origin, gateway: gateway, clientID: id, fields: ["grant_type": "authorization_code", "code": code, "redirect_uri": OAuthAttempt.callback, "code_verifier": attempt.verifier])
         let oauth = OAuthSession(origin: origin, gateway: gateway, credentials: credentials)
-        let client = OutlineAPI(baseURL: origin, token: "", gateway: gateway, oauth: oauth)
+        var client = OutlineAPI(baseURL: origin, token: "", gateway: gateway, oauth: oauth)
         let collections: [OutlineCollection] = try await client.list("collections.list")
         guard generation == current else { throw CancellationError() }
         try await oauth.persist()
@@ -125,6 +123,7 @@ struct LocalDraft: Codable, Equatable {
         UserDefaults.standard.set(origin.absoluteString, forKey: "workspace")
         expandedSections = []
         UserDefaults.standard.set(id, forKey: "oauthClientID")
+        client.networkPolicy = networkPolicy
         generation = UUID(); api = client; self.collections = collections; demo = false
         await refresh()
     }
