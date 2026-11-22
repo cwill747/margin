@@ -30,6 +30,7 @@ struct ConnectView: View {
     @State private var token = ""
     @State private var useSSO = true
     @State private var gateway = GatewayConfiguration()
+    @State private var resumeAPIKeyConnection = false
     @State private var gatewayURL: URL?
     @State private var outlineURL: URL?
     @State private var browser = BrowserSignIn()
@@ -61,11 +62,13 @@ struct ConnectView: View {
                         DisclosureGroup("Advanced connection settings") {
                             VStack(alignment: .leading, spacing: 16) {
                                 GatewayFields(configuration: $gateway)
-                                Button("Refresh sign-in session") {
-                                    do { gatewayURL = try OutlineAPI.workspaceURL(host) }
-                                    catch { self.error = error.localizedDescription }
+                                if !gateway.usesServiceToken {
+                                    Button("Verify Cloudflare Access") {
+                                        do { resumeAPIKeyConnection = false; gatewayURL = try OutlineAPI.workspaceURL(host) }
+                                        catch { self.error = error.localizedDescription }
+                                    }
+                                    if !gateway.cookies.isEmpty { Text("Cloudflare Access verified").font(.footnote).foregroundStyle(palette.secondary) }
                                 }
-                                if !gateway.cookies.isEmpty { Text("Sign-in session ready").font(.footnote).foregroundStyle(palette.secondary) }
                             }.padding(.top)
                         }
                     }.padding(22).background(palette.surface, in: RoundedRectangle(cornerRadius: 22))
@@ -77,14 +80,7 @@ struct ConnectView: View {
                             catch { self.error = error.localizedDescription }
                             return
                         }
-                        connecting = true
-                        Task {
-                            do {
-                                try await workspace.connect(host: host, token: token, gateway: gateway)
-                            }
-                            catch { self.error = error.localizedDescription }
-                            connecting = false
-                        }
+                        connectWithKey()
                     } label: {
                         HStack { Spacer(); if connecting { ProgressView() }; Text(connecting ? "Connecting…" : (useSSO ? "Sign in to Outline" : "Open workspace")).bold(); Image(systemName: "arrow.right"); Spacer() }.padding(8)
                     }.buttonStyle(.borderedProminent).disabled(connecting || host.isEmpty || (!useSSO && token.isEmpty))
@@ -97,7 +93,12 @@ struct ConnectView: View {
             }.scrollEdgeEffectHidden().background(palette.background)
         }
         .sheet(isPresented: Binding(get: { gatewayURL != nil }, set: { if !$0 { gatewayURL = nil } })) {
-            if let gatewayURL { GatewayLoginView(origin: gatewayURL) { gateway.cookies = $0 } }
+            if let gatewayURL {
+                GatewayLoginView(origin: gatewayURL) { cookies in
+                    gateway.cookies = cookies
+                    if resumeAPIKeyConnection { connectWithKey(afterVerification: true) }
+                }
+            }
         }
         .sheet(isPresented: Binding(get: { outlineURL != nil }, set: { if !$0 { outlineURL = nil } })) {
             if let outlineURL {
@@ -111,6 +112,27 @@ struct ConnectView: View {
         .onChange(of: host) { _, _ in gateway.cookies = [] }
         .onDisappear { browser.cancel() }
     }
+
+    private func connectWithKey(afterVerification: Bool = false) {
+        connecting = true
+        error = nil
+        Task {
+            defer { connecting = false }
+            do {
+                try await workspace.connect(host: host, token: token, gateway: gateway)
+            } catch let challenge as GatewaySignInRequired {
+                if afterVerification {
+                    error = "Cloudflare Access still requires verification. Check that you have access to this workspace and try again."
+                } else {
+                    resumeAPIKeyConnection = true
+                    gatewayURL = challenge.workspaceURL
+                }
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
 }
 
 struct LibraryView: View {

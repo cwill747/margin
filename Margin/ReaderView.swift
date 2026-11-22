@@ -66,13 +66,18 @@ struct DuoReader: View {
 }
 
 struct ReaderView: View {
+    private struct LoadID: Equatable {
+        let document: String
+        let session: UUID
+    }
     @Bindable var workspace: Workspace
     let original: OutlineDocument
     let isVisible: Bool
     let onPin: ((OutlineDocument) -> Void)?
     let onNavigate: (OutlineDocument) -> Void
     @State private var loaded: OutlineDocument?
-    @State private var loading = false
+    @State private var activeLoad: UUID?
+    private var loading: Bool { activeLoad != nil }
     @State private var error: String?
     @State private var offline = false
     @State private var syncingPage = false
@@ -111,8 +116,9 @@ struct ReaderView: View {
             }
         }
         .background(palette.background)
-        .task(id: original.id) {
-            loaded = nil; titleFocused = isVisible && onPin != nil; await load()
+        .task(id: LoadID(document: original.id, session: workspace.readerSessionID)) {
+            if loaded?.id != original.id { loaded = nil }
+            await load()
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-testing"),
                ["editor", "preview"].contains(ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] ?? "") { editingDocument = document }
@@ -120,7 +126,10 @@ struct ReaderView: View {
         }
         .onChange(of: isVisible) { _, visible in titleFocused = visible }
         .announceAccessibilityChanges(isVisible ? error : nil)
-        .onChange(of: original.id) { _, _ in editingDocument = nil }
+        .onChange(of: original.id, initial: true) { _, _ in
+            editingDocument = nil
+            titleFocused = isVisible && onPin != nil
+        }
         .toolbar {
             if onPin != nil && editingDocument == nil && isVisible {
                 ToolbarItemGroup(placement: .primaryAction) { readerActions }
@@ -204,15 +213,20 @@ struct ReaderView: View {
     }
 
     private func load() async {
-        loading = true; error = nil; offline = false
-        defer { loading = false }
+        let session = workspace.readerSessionID
+        guard !Task.isCancelled else { return }
+        let requestID = UUID()
+        activeLoad = requestID
+        error = nil; offline = false
+        defer { if activeLoad == requestID { activeLoad = nil } }
         do {
             let fresh = try await workspace.load(original)
             try Task.checkCancellation()
+            guard activeLoad == requestID, workspace.readerSessionID == session else { return }
             loaded = fresh; offline = workspace.workOffline
             if isSaved { try workspace.saveOffline(fresh) }
         } catch is CancellationError { } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, activeLoad == requestID, workspace.readerSessionID == session else { return }
             if let saved = workspace.saved.first(where: { $0.id == original.id }) {
                 loaded = saved; offline = true
             }

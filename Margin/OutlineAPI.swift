@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import OSLog
 
 struct OutlineDocument: Codable, Identifiable, Hashable {
     let id: String
@@ -45,6 +46,7 @@ struct GatewaySignInRequired: LocalizedError {
 }
 
 struct OutlineAPI {
+    private struct Rejection: Decodable { let message: String }
     let baseURL: URL
     let token: String
     var configuration: URLSessionConfiguration = .ephemeral
@@ -91,10 +93,38 @@ struct OutlineAPI {
                destination.path.hasPrefix("/cdn-cgi/access/login") {
                 // Present the workspace origin for sign-in, never a server-supplied
                 // redirect URL containing state or the API authorization header.
+                if gateway.usesServiceToken {
+                    throw APIError(message: "Cloudflare Access did not accept the service token. Check its client ID, client secret, and access policy for this workspace.")
+                }
                 throw GatewaySignInRequired(workspaceURL: baseURL)
             }
             switch response.statusCode {
-            case 401: throw APIError(message: oauth == nil && !browserSession ? "Your API key was not accepted. Check it in workspace settings." : "Your sign-in expired or was not accepted. Sign in to Outline again in Workspace settings.")
+            case 401:
+                if browserSession {
+                    let log = Logger(subsystem: "us.cwill.margin", category: "SignIn")
+                    // Only log recognized authentication messages. A gateway can return arbitrary content.
+                    let message = try? JSONDecoder().decode(Rejection.self, from: data).message
+                    let reason: String
+                    switch message {
+                    case "Authentication required", "Missing token": reason = "missing token"
+                    case "Expired token": reason = "expired token"
+                    case "Invalid token": reason = "invalid token"
+                    case "Unable to decode token": reason = "malformed token"
+                    case "Token has already been used": reason = "already used token"
+                    default: reason = "unclassified"
+                    }
+                    log.notice("Browser sign-in HTTP 401: server reason=\(reason, privacy: .public)")
+                    let sent = request.value(forHTTPHeaderField: "Cookie")?.components(separatedBy: "; ") ?? []
+                    for name in ["CF_Authorization", "CF_Binding"] {
+                        let saved = gateway.cookies.filter { $0.name == name }
+                        let lifetime = saved.map { cookie in
+                            cookie.expires.map { String(Int($0.timeIntervalSinceNow)) } ?? "session"
+                        }.joined(separator: ",")
+                        let attached = sent.contains { $0.hasPrefix(name + "=") }
+                        log.notice("Browser sign-in HTTP 401: bearer present=\(!bearer.isEmpty), \(name, privacy: .public) attached=\(attached), saved=\(saved.count), seconds to expiry=\(lifetime, privacy: .public)")
+                    }
+                }
+                throw APIError(message: oauth == nil && !browserSession ? "Your API key was not accepted. Check it in workspace settings." : "Your sign-in expired or was not accepted. Sign in to Outline again in Workspace settings.")
             case 403: throw APIError(message: "Your account does not have permission for this action.")
             case 409: throw APIError(message: "This document changed elsewhere. Your draft is safe; reopen the current document before trying again.")
             case 429: throw APIError(message: "Outline is receiving too many requests. Try again shortly.")

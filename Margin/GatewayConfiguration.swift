@@ -17,6 +17,11 @@ struct GatewayConfiguration: Codable, Equatable {
     var headers: [GatewayHeader] = []
     var cookies: [GatewayCookie] = []
 
+    private static let serviceHeaderNames = ["cf-access-client-id", "cf-access-client-secret"]
+    var usesServiceToken: Bool {
+        headers.contains { Self.serviceHeaderNames.contains($0.name.trimmingCharacters(in: .whitespaces).lowercased()) }
+    }
+
     func validatedHeaders() throws -> [String: String] {
         var result: [String: String] = [:]
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&'*+-.^_`|~")
@@ -31,6 +36,12 @@ struct GatewayConfiguration: Codable, Equatable {
             }
             result[name] = header.value
         }
+        if usesServiceToken {
+            let normalized = Dictionary(uniqueKeysWithValues: result.map { ($0.key.lowercased(), $0.value) })
+            guard Self.serviceHeaderNames.allSatisfy({ !(normalized[$0] ?? "").trimmingCharacters(in: .whitespaces).isEmpty }) else {
+                throw APIError(message: "Enter both the Cloudflare service token client ID and client secret.")
+            }
+        }
         return result
     }
 
@@ -39,6 +50,7 @@ struct GatewayConfiguration: Codable, Equatable {
             throw APIError(message: "Gateway credentials may only be sent to your workspace.")
         }
         for (name, value) in try validatedHeaders() { request.setValue(value, forHTTPHeaderField: name) }
+        guard !usesServiceToken else { return }
         let cookie = cookies.filter {
             $0.host == origin.host?.lowercased() && ($0.expires == nil || $0.expires! > Date()) &&
             ["CF_Authorization", "CF_Binding"].contains($0.name) &&

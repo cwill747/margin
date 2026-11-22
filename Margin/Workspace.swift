@@ -46,6 +46,7 @@ struct LocalDraft: Codable, Equatable {
     private var avatarURL: URL { URL.applicationSupportDirectory.appendingPathComponent("avatar.data") }
     private var profileURL: URL { URL.applicationSupportDirectory.appendingPathComponent("profile.json") }
     var name: String { demo ? "Sample workspace" : api?.baseURL.host ?? "Your workspace" }
+    private(set) var readerSessionID = UUID()
     private var generation = UUID()
     private var cacheURL: URL {
         URL.applicationSupportDirectory.appendingPathComponent("saved-documents.json")
@@ -98,6 +99,7 @@ struct LocalDraft: Codable, Equatable {
         generation = UUID()
         client.networkPolicy = networkPolicy
         self.api = client
+        readerSessionID = UUID()
         self.collections = collections
         demo = false
         await refresh()
@@ -124,6 +126,7 @@ struct LocalDraft: Codable, Equatable {
         expandedSections = []
         UserDefaults.standard.set(id, forKey: "oauthClientID")
         client.networkPolicy = networkPolicy
+        readerSessionID = UUID()
         generation = UUID(); api = client; self.collections = collections; demo = false
         await refresh()
     }
@@ -133,6 +136,7 @@ struct LocalDraft: Codable, Equatable {
         client.gateway = gateway
         await client.oauth?.updateGateway(gateway)
         api = client
+        readerSessionID = UUID()
     }
     func refresh() async {
         guard !workOffline, !busy, let api else { return }

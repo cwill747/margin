@@ -64,14 +64,14 @@ struct GatewayLoginView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 Text(model.address.isEmpty ? origin.host! : model.address).font(.caption).lineLimit(nil).padding(8)
-                if outlineCompletion != nil { Text("Sign in below, then tap Connect to open your workspace.").font(.footnote).foregroundStyle(palette.secondary).padding(.horizontal) }
+                Text(outlineCompletion == nil ? "Your workspace uses Cloudflare Access. Complete its verification, then tap Continue." : "Sign in below, then tap Connect to open your workspace.").font(.footnote).foregroundStyle(palette.secondary).padding(.horizontal)
                 if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(palette.foreground).padding() }
                 GatewayWebView(origin: origin, model: model)
-            }.appSurface().announceAccessibilityChanges(model.error).navigationTitle("Sign in to Outline").navigationBarTitleDisplayMode(.inline)
+            }.appSurface().announceAccessibilityChanges(model.error).navigationTitle(outlineCompletion == nil ? "Verify Cloudflare Access" : "Sign in to Outline").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(verifying ? "Connecting…" : (outlineCompletion == nil ? "Use session" : "Connect")) {
+                        Button(verifying ? "Connecting…" : (outlineCompletion == nil ? "Continue" : "Connect")) {
                             verifying = true
                             Task {
                                 defer { verifying = false }
@@ -157,7 +157,9 @@ struct ConnectionSettingsView: View {
                 Group {
             Section("Advanced connection settings") {
                 GatewayFields(configuration: $gateway)
-                Button("Refresh sign-in session") { showGateway = true }
+                if !gateway.usesServiceToken {
+                    Button("Verify Cloudflare Access") { showGateway = true }
+                }
                 if !gateway.cookies.isEmpty {
                     Button("Clear access session", role: .destructive) { gateway.cookies = [] }
                 }
@@ -188,7 +190,15 @@ struct ConnectionSettingsView: View {
             .task { if let origin = workspace.api?.baseURL { gateway = GatewayConfiguration.load(for: origin) } }
             .sheet(isPresented: $showGateway) {
                 if let origin = workspace.api?.baseURL {
-                    GatewayLoginView(origin: origin) { gateway.cookies = $0 }
+                    GatewayLoginView(origin: origin) { cookies in
+                        run {
+                            guard var settings = workspace.api?.gateway else { return }
+                            settings.cookies = cookies
+                            try await workspace.updateGateway(settings)
+                            gateway.cookies = cookies
+                            message = "Sign-in session refreshed."
+                        }
+                    }
                 }
             }
             .sheet(isPresented: $showOutline) {
@@ -196,6 +206,7 @@ struct ConnectionSettingsView: View {
                     GatewayLoginView(origin: origin, outlineCompletion: { token, cookies in
                         var settings = gateway; settings.cookies = cookies
                         try await workspace.connect(host: origin.absoluteString, token: token, gateway: settings, browserSession: true)
+                        gateway = settings
                     }, completion: { _ in })
                 }
             }

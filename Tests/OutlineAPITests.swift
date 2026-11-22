@@ -112,6 +112,30 @@ extension OutlineAPITests {
         } catch { XCTFail("Unexpected error: \(error)") }
     }
 
+    func testServiceTokenRedirectDoesNotRequestBrowserSignIn() async {
+        var client = stubClient()
+        client.gateway.headers = [.init(name: "cf-access-client-id", value: "client")]
+        XCTAssertThrowsError(try client.gateway.validatedHeaders())
+        client.gateway.headers.append(.init(name: "CF-Access-Client-Secret", value: "secret"))
+        client.gateway.cookies = [.init(name: "CF_Authorization", value: "old", host: "wiki.example.com", expires: nil)]
+        StubProtocol.headers = ["Location": "https://team.cloudflareaccess.com/cdn-cgi/access/login/wiki.example.com"]
+        defer { StubProtocol.headers = [:] }
+        StubProtocol.respond = { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "CF-Access-Client-Id"), "client")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "CF-Access-Client-Secret"), "secret")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+            return (302, "")
+        }
+        do {
+            let _: Envelope<OutlineDocument> = try await client.request("documents.info")
+            XCTFail("Expected service token error")
+        } catch {
+            XCTAssertTrue(error is APIError)
+            XCTAssertTrue(error.localizedDescription.contains("service token"))
+        }
+    }
+
     func testUntrustedRedirectIsNotTreatedAsGateway() async {
         StubProtocol.headers = ["Location": "https://team.cloudflareaccess.com.hostile.example/cdn-cgi/access/login"]
         defer { StubProtocol.headers = [:] }
@@ -179,7 +203,7 @@ extension OutlineAPITests {
     }
     func testGatewayCredentialsNeverLeaveExactOrigin() throws {
         let origin = URL(string: "https://wiki.example.com")!
-        let gateway = GatewayConfiguration(headers: [.init(name: "CF-Access-Client-Secret", value: "test-secret")])
+        let gateway = GatewayConfiguration(headers: [.init(name: "CF-Access-Client-Id", value: "client-id"), .init(name: "CF-Access-Client-Secret", value: "test-secret")])
         for url in ["http://wiki.example.com", "https://wiki.example.com:444", "https://idp.example.com", "https://wiki.example.com.hostile.example"] {
             var request = URLRequest(url: URL(string: url)!)
             XCTAssertThrowsError(try gateway.apply(to: &request, origin: origin))
@@ -236,7 +260,7 @@ extension OutlineAPITests {
             XCTAssertTrue(String(data: body, encoding: .utf8)!.contains("code=a%2Bb%26c"))
             return (200, #"{"access_token":"access","refresh_token":"refresh","expires_in":3600,"token_type":"Bearer"}"#)
         }
-        let credentials = try await OAuthSession.exchange(origin: URL(string: "https://wiki.example.com")!, gateway: .init(headers: [.init(name: "CF-Access-Client-Secret", value: "test-secret")]), clientID: "public", fields: ["grant_type": "authorization_code", "code": "a+b&c", "code_verifier": "verifier"], configuration: config)
+        let credentials = try await OAuthSession.exchange(origin: URL(string: "https://wiki.example.com")!, gateway: .init(headers: [.init(name: "CF-Access-Client-Id", value: "client-id"), .init(name: "CF-Access-Client-Secret", value: "test-secret")]), clientID: "public", fields: ["grant_type": "authorization_code", "code": "a+b&c", "code_verifier": "verifier"], configuration: config)
         XCTAssertEqual(credentials.refreshToken, "refresh")
         XCTAssertEqual(credentials.clientID, "public")
         XCTAssertGreaterThan(credentials.expiresAt.timeIntervalSinceNow, 3500)
