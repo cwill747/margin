@@ -62,6 +62,10 @@ Release versions follow Semantic Versioning (`MAJOR.MINOR.PATCH`): bump MAJOR fo
 
 When preparing a release, update `MARKETING_VERSION` in `Margin.xcodeproj/project.pbxproj` consistently across build configurations. Do not bump it for every commit. Keep the numeric platform build number (`CURRENT_PROJECT_VERSION`) separate: TestFlight builds of the same release version use increasing build numbers. SemVer prerelease labels such as `1.2.0-beta.1` belong in release labels; keep the Xcode marketing version numeric (`1.2.0`).
 
+## Xcode Cloud
+
+See [the Xcode Cloud setup guide](docs/xcode-cloud.md) for hosted pull-request validation and TestFlight workflows. The executable `ci_scripts/ci_post_clone.sh` hook runs MarginCore tests before source-cloning Cloud actions; the shared Margin scheme supplies UI and accessibility tests. Initial Apple account setup and GitHub repository authorization must be completed in Xcode before hosted builds can run.
+
 ## TestFlight CLI and agent skill
 
 Use the installed Xcode toolchain; no Fastlane or additional package installation is needed. Create the App Store Connect app record for `us.cwill.margin` first, and use an Apple Developer account with permission to upload builds and manage the required signing assets. Sign into Xcode Settings → Accounts, or export all three API-key variables:
