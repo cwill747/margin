@@ -65,7 +65,9 @@ struct LocalDraft: Codable, Equatable {
             if ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] != "connect" {
                 showDemo()
                 expandedSections = ["getting-started", "ideas"]
-                documents[0].text = "## A useful heading\n\nRead a [reference](https://example.com).\n\n> A readable quotation.\n\n- [x] Completed item\n- [ ] Next item\n\n```swift\nlet answer = 42\n```\n\n| Topic | Notes |\n| --- | --- |\n| Access | Everyone |"
+                if ProcessInfo.processInfo.environment["MARGIN_TEST_SCREEN"] != "linked-library" {
+                    documents[0].text = "## A useful heading\n\nRead a [reference](https://example.com).\n\n> A readable quotation.\n\n- [x] Completed item\n- [ ] Next item\n\n```swift\nlet answer = 42\n```\n\n| Topic | Notes |\n| --- | --- |\n| Access | Everyone |"
+                }
             }
             return
         }
@@ -500,7 +502,7 @@ struct LocalDraft: Codable, Equatable {
         demo = true
         collections = [.init(id: "getting-started", name: "Getting started"), .init(id: "ideas", name: "Ideas & research")]
         documents = [
-            .init(id: "welcome", title: "A little more room to think", text: "# Welcome to Margin\n\nYour knowledge, comfortably within reach. Browse your collections, find an answer, and keep a reference beside what you’re reading.\n\n## Make space for two\n\nOpen a document, then choose **Keep beside**. Your reference stays in place as you browse another page. On a smaller screen, switch between the two without losing your place.\n\n## Take it with you\n\nSave a document for reading when you’re away from a connection. Saved copies stay on this device.\n\n> This is a sample workspace. Connect your Outline workspace to see your own documents.", collectionId: "getting-started"),
+            .init(id: "welcome", title: "A little more room to think", text: "# Welcome to Margin\n\nYour knowledge, comfortably within reach. Browse your collections, find an answer, and keep a reference beside what you’re reading.\n\n[Read the closing note](https://margin.example/doc/closing-note)\n\n## Make space for two\n\nOpen a document, then choose **Keep beside**. Your reference stays in place as you browse another page. On a smaller screen, switch between the two without losing your place.\n\n## Take it with you\n\nSave a document for reading when you’re away from a connection. Saved copies stay on this device.\n\n> This is a sample workspace. Connect your Outline workspace to see your own documents.", collectionId: "getting-started"),
             .init(id: "field-notes", title: "Field notes", text: "Good ideas rarely arrive at a desk.\n\n## A small ritual\n\n- Keep a question close.\n- Collect the surprising details.\n- Leave room for a second thought.\n\n## Connect the dots\n\nKeep this page beside another document to compare your notes.", collectionId: "ideas"),
             .init(id: "reading", title: "A quieter reading space", text: "A comfortable measure. Type that follows your preferred size. A reference exactly where you need it.\n\n## Built around your screen\n\nUse the sidebar on iPad mini to move through your workspace. On iPhone, navigation stays one tap away.\n\n**Tip:** Use the share button to send a document link, or open the original in Outline for rich editing.", collectionId: "getting-started")
         ]
@@ -508,5 +510,18 @@ struct LocalDraft: Codable, Equatable {
             "getting-started": [.init(id: "welcome", title: documents[0].title, children: [.init(id: "reading", title: documents[2].title, children: [])])],
             "ideas": [.init(id: "field-notes", title: documents[1].title, children: [])]
         ]
+        var entries: [OutlineTreeNode] = []
+        for week in 1...30 {
+            let entry = OutlineDocument(id: "week-\(week)", title: "Week \(week) observations",
+                                        text: "## Research journal\n\nNotes from week \(week) of the reading study.", collectionId: "ideas")
+            documents.append(entry)
+            entries.append(.init(id: entry.id, title: entry.title, children: []))
+        }
+        let closing = OutlineDocument(id: "closing-note", title: "Closing note",
+                                      text: "[Return to the welcome page](https://margin.example/doc/welcome)", collectionId: "ideas",
+                                      parentDocumentId: "field-notes")
+        documents.append(closing)
+        entries.append(.init(id: closing.id, title: closing.title, children: []))
+        trees["ideas"]?[0].children = entries
     }
 }

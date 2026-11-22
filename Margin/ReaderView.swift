@@ -162,7 +162,10 @@ struct ReaderView: View {
                             .environment(\.openURL, OpenURLAction { url in
                                 let resolved = URL(string: url.relativeString, relativeTo: workspace.api?.baseURL)?.absoluteURL
                                 guard let resolved, ["https", "http"].contains(resolved.scheme ?? "") else { return .discarded }
-                                if let api = workspace.api, GatewayConfiguration.sameOrigin(resolved, api.baseURL) {
+                                if workspace.demo, resolved.host == "margin.example",
+                                   let sample = workspace.documents.first(where: { $0.id == resolved.lastPathComponent }) {
+                                    onNavigate(sample)
+                                } else if let api = workspace.api, GatewayConfiguration.sameOrigin(resolved, api.baseURL) {
                                     Task {
                                         do {
                                             let response: Envelope<OutlineDocument> = try await api.request("documents.info", body: ["id": resolved.lastPathComponent])

@@ -237,7 +237,7 @@ struct LibraryView: View {
                                         .accessibilityAction(named: "Keep beside") { companion = document }
                                     }
                                     .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * 16)
-                                    .id("page-" + document.id)
+                                    .id(document.id)
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
                                     .contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                                 }
@@ -307,7 +307,7 @@ struct LibraryView: View {
                 }
                 if workspace.draftIDs.contains(selected.id) { workspace.expandedSections.insert("drafts") }
             }
-            sidebarScrollTarget = "page-" + selected.id
+            sidebarScrollTarget = selected.id
         }
         sidebarScrollRequest += 1
     }
@@ -353,7 +353,7 @@ struct LibraryView: View {
                         Section {
                             if workspace.expandedSections.contains("drafts") {
                             ForEach(workspace.documents.filter { workspace.draftIDs.contains($0.id) }) { document in
-                                Button { openSidebarDocument(document) } label: { Label(document.title, systemImage: "doc.badge.ellipsis") }.id("page-" + document.id)
+                                Button { openSidebarDocument(document) } label: { Label(document.title, systemImage: "doc.badge.ellipsis") }.id(document.id)
                             }
                             }
                         } header: {
@@ -376,7 +376,7 @@ struct LibraryView: View {
                             }.padding(.vertical, 5)
                         }.accessibilityAction(named: "Keep beside") { companion = document }
                         .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
-                        .id("page-" + document.id).contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
+                        .id(document.id).contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                     }
                     if visibleDocuments.isEmpty && !searching && !workspace.busy {
                         VStack(spacing: 12) {
@@ -406,7 +406,7 @@ struct LibraryView: View {
             }
             .task(id: sidebarScrollRequest) {
                 // Let expanded collection/ancestor rows enter the list before scrolling.
-                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
                 proxy.scrollTo(sidebarScrollTarget, anchor: revealSearch ? .top : .center)
                 if revealSearch { searchAccessibilityFocused = true; searchFocused = true }
@@ -438,7 +438,11 @@ struct LibraryView: View {
                         selected = document; savedOnly = false; collection = nil; query = ""
                     }, onClose: { composing = false; if selected == nil { compactColumn = .sidebar } })
                 } else {
-                    DuoReader(workspace: workspace, document: selected, companion: $companion, onNavigate: { selected = $0 })
+                    DuoReader(workspace: workspace, document: selected, companion: $companion, onNavigate: { destination in
+                        revealSearch = false
+                        selected = destination
+                        revealSidebarSelection()
+                    })
                 }
             }
             .appSurface()

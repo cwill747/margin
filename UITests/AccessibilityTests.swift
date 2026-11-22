@@ -109,6 +109,23 @@ final class AccessibilityTests: XCTestCase {
         try audit(empty, name: "Empty search")
     }
 
+    func testLinkedDocumentRevealsSidebarRow() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "Requires a visible split sidebar")
+        let previous = XCUIDevice.shared.orientation
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = previous }
+        let app = launch("linked-library")
+        app.buttons["A little more room to think"].tap()
+        let link = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Read the closing note")).firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 10))
+        link.tap()
+        let row = app.buttons["Closing note"]
+        let visible = NSPredicate { _, _ in row.exists && row.isHittable && row.isSelected }
+        expectation(for: visible, evaluatedWith: app)
+        waitForExpectations(timeout: 10)
+        try audit(app, name: "Linked document and selected sidebar row")
+    }
+
     func testReaderPalettes() throws {
         for palette in ["system", "paper", "sepia", "night"] {
             let app = launch("reader", palette: palette)
