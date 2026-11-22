@@ -460,10 +460,6 @@ struct LibraryView: View {
             .toolbar {
                 if !composing && !showSettings {
                     ToolbarItem(placement: .primaryAction) { searchButton }
-                    ToolbarItemGroup(placement: .bottomBar) {
-                        Spacer()
-                        newDocumentButton
-                    }
                 }
             }
     }
