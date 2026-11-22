@@ -62,6 +62,12 @@ struct DuoReader: View {
                 }
             }
     }
+    private var newDocumentButton: some View {
+        Button("New document", systemImage: "plus", action: onCreateDocument)
+            .labelStyle(.iconOnly)
+            .keyboardShortcut("n", modifiers: .command)
+    }
+
     private var referenceHeader: some View {
         HStack {
             Label("REFERENCE", systemImage: "pin.fill").font(.caption.weight(.semibold)).tracking(1)
@@ -195,12 +201,6 @@ struct ReaderView: View {
         Button("Edit", systemImage: "square.and.pencil") { editingDocument = document }
             .accessibilityLabel("Edit document")
             .disabled(document.text == nil || loading)
-    }
-
-    private var newDocumentButton: some View {
-        Button("New document", systemImage: "plus", action: onCreateDocument)
-            .labelStyle(.iconOnly)
-            .keyboardShortcut("n", modifiers: .command)
     }
 
     private var readerMoreActions: some View {
