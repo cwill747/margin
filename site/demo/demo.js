@@ -48,6 +48,10 @@ function persist() {
   catch { storageAvailable = false; announce('Browser storage is unavailable. Changes last until this page closes.'); }
 }
 function escapeHTML(text) { return text.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderHTML(target, html) {
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  target.replaceChildren(...parsed.body.childNodes);
+}
 // Escape first: editable sample content can never become executable HTML.
 function inline(text) {
   return escapeHTML(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/\*([^*]+)\*/g, '<em>$1</em>').replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
@@ -70,17 +74,40 @@ function captureScroll() {
 function renderList() {
   const query = $('search').value.trim().toLowerCase();
   const visible = state.documents.filter(d => (!savedOnly || state.saved.includes(d.id)) && `${d.title} ${d.text}`.toLowerCase().includes(query));
-  $('document-list').innerHTML = Object.entries(collections).map(([id, title]) => {
+  let listHTML = Object.entries(collections).map(([id, title]) => {
     const documents = visible.filter(d => d.collection === id);
-    return documents.length ? `<h2 class="collection">${title}${icon('chevron')}</h2>${documents.map(d => `<button class="document-button" data-open="${escapeHTML(d.id)}" ${d.id === state.selected ? 'aria-current="page"' : ''}>${icon('page')}<span>${escapeHTML(d.title)}${state.saved.includes(d.id) ? '<small>Saved for reading</small>' : ''}</span></button>`).join('')}` : '';
-  }).join('') || '<p class="empty">' + (savedOnly ? 'No saved pages yet. Choose “Save offline” on a document.' : 'No matching pages. Try another search.') + '</p>';
+    if (!documents.length) return '';
+    const buttons = documents.map(d => {
+      const current = d.id === state.selected ? 'aria-current="page"' : '';
+      const savedLabel = state.saved.includes(d.id) ? '<small>Saved for reading</small>' : '';
+      return `<button class="document-button" data-open="${escapeHTML(d.id)}" ${current}>${icon('page')}<span>${escapeHTML(d.title)}${savedLabel}</span></button>`;
+    }).join('');
+    return `<h2 class="collection">${title}${icon('chevron')}</h2>${buttons}`;
+  }).join('');
+  if (!listHTML) {
+    const message = savedOnly ? 'No saved pages yet. Choose “Save offline” on a document.' : 'No matching pages. Try another search.';
+    listHTML = `<p class="empty">${message}</p>`;
+  }
+  renderHTML($('document-list'), listHTML);
   $('all').setAttribute('aria-pressed', String(!savedOnly));
   $('saved').setAttribute('aria-pressed', String(savedOnly));
 }
-function renderReader(id, target, isReference = false) {
+function renderReader(id, target) {
   const d = doc(id);
-  if (!d) { target.innerHTML = ''; return; }
-  target.innerHTML = `<div class="reader-toolbar">${isReference ? '<span class="reference-label">Reference</span><span class="spacer"></span><button data-action="close-reference" aria-label="Close reference">Close</button>' : '<button data-action="pin" title="Keep this page as a reference while opening another">Keep beside</button><span class="spacer"></span>'}${!isReference ? `<button data-action="save">${state.saved.includes(id) ? 'Saved ✓' : 'Save offline'}</button><button data-action="edit">Edit</button>` : ''}</div><article class="page" data-scroll-key="${isReference ? 'reference' : 'primary'}:${escapeHTML(id)}"><div class="eyebrow">${collections[d.collection]}</div><h1>${escapeHTML(d.title)}</h1><div class="markdown">${markdown(d.text)}</div></article>`;
+  if (!d) { target.replaceChildren(); return; }
+  const saveLabel = state.saved.includes(id) ? 'Saved ✓' : 'Save offline';
+  const toolbar = '<button data-action="pin" title="Keep this page as a reference while opening another">Keep beside</button><span class="spacer"></span>';
+  const readerActions = `<button data-action="save">${saveLabel}</button><button data-action="edit">Edit</button>`;
+  renderDocument(id, target, 'primary', toolbar, readerActions);
+}
+function renderReference(id, target) {
+  const toolbar = '<span class="reference-label">Reference</span><span class="spacer"></span><button data-action="close-reference" aria-label="Close reference">Close</button>';
+  renderDocument(id, target, 'reference', toolbar, '');
+}
+function renderDocument(id, target, scrollKey, toolbar, readerActions) {
+  const d = doc(id);
+  if (!d) { target.replaceChildren(); return; }
+  renderHTML(target, `<div class="reader-toolbar">${toolbar}${readerActions}</div><article class="page" data-scroll-key="${scrollKey}:${escapeHTML(id)}"><div class="eyebrow">${collections[d.collection]}</div><h1>${escapeHTML(d.title)}</h1><div class="markdown">${markdown(d.text)}</div></article>`);
   const page = target.querySelector('.page');
   page.scrollTop = scrollPositions.get(page.dataset.scrollKey) || 0;
 }
@@ -88,8 +115,8 @@ function render() {
   captureScroll();
   renderList();
   if (editing) renderEditor(); else renderReader(state.selected, $('primary'));
-  renderReader(state.reference, $('reference'), true);
-  $('save-page').innerHTML = icon(state.saved.includes(state.selected) ? 'check' : 'save');
+  renderReference(state.reference, $('reference'));
+  renderHTML($('save-page'), icon(state.saved.includes(state.selected) ? 'check' : 'save'));
   $('save-page').setAttribute('aria-label', state.saved.includes(state.selected) ? 'Remove saved copy' : 'Save offline');
   $('save-page').title = $('save-page').getAttribute('aria-label');
   $('screen').classList.toggle('editing', editing);
@@ -153,7 +180,7 @@ function startEditor(isNew) {
 }
 function renderEditor() {
   const draft = state.draft;
-  $('primary').innerHTML = `<div class="reader-toolbar"><button data-action="cancel-edit">Back</button><span class="spacer"></span><button data-action="discard-edit">Discard</button><button class="solid" data-action="publish" ${draft.title.trim() ? '' : 'disabled'}>Save</button></div><div class="editor"><input id="edit-title" aria-label="Document title" placeholder="Untitled document" value="${escapeHTML(draft.title)}"><div class="formatting" aria-label="Markdown formatting"><button data-format="bold" aria-label="Bold"><strong>B</strong></button><button data-format="italic" aria-label="Italic"><em>I</em></button><button data-format="heading">Heading</button><button data-format="list">List</button><button data-format="quote">Quote</button></div><textarea id="edit-text" aria-label="Document Markdown" placeholder="Leave room for a thought…">${escapeHTML(draft.text)}</textarea><p class="editor-note">Markdown · Draft saved in this browser</p></div>`;
+  renderHTML($('primary'), `<div class="reader-toolbar"><button data-action="cancel-edit">Back</button><span class="spacer"></span><button data-action="discard-edit">Discard</button><button class="solid" data-action="publish" ${draft.title.trim() ? '' : 'disabled'}>Save</button></div><div class="editor"><input id="edit-title" aria-label="Document title" placeholder="Untitled document" value="${escapeHTML(draft.title)}"><div class="formatting" aria-label="Markdown formatting"><button data-format="bold" aria-label="Bold"><strong>B</strong></button><button data-format="italic" aria-label="Italic"><em>I</em></button><button data-format="heading">Heading</button><button data-format="list">List</button><button data-format="quote">Quote</button></div><textarea id="edit-text" aria-label="Document Markdown" placeholder="Leave room for a thought…">${escapeHTML(draft.text)}</textarea><p class="editor-note">Markdown · Draft saved in this browser</p></div>`);
   const update = () => {
     state.draft.title = $('edit-title').value; state.draft.text = $('edit-text').value;
     $('primary').querySelector('[data-action=publish]').disabled = !state.draft.title.trim(); persist();
@@ -251,7 +278,7 @@ async function foldPhone() {
     scene.className = 'fold-scene';
     scene.inert = true;
     scene.setAttribute('aria-hidden', 'true');
-    scene.innerHTML = '<div class="fold-rig"><div class="fold-stationary"><div class="fold-shade"></div></div><div class="fold-wing"><div class="fold-face fold-inside"><div class="fold-glint"></div></div><div class="fold-face fold-outside"></div></div></div>';
+    renderHTML(scene, '<div class="fold-rig"><div class="fold-stationary"><div class="fold-shade"></div></div><div class="fold-wing"><div class="fold-face fold-inside"><div class="fold-glint"></div></div><div class="fold-face fold-outside"></div></div></div>');
     const rig = scene.querySelector('.fold-rig');
     const wing = scene.querySelector('.fold-wing');
     const stationary = scene.querySelector('.fold-stationary');
@@ -328,7 +355,7 @@ if (!storageAvailable) announce('Browser storage is unavailable. Changes last un
 else if (state.draft) announce('You have an unfinished draft. Choose Edit or New document to resume.');
 
 for (const [id, name] of Object.entries({'settings-open':'profile','library-toggle':'sidebar','back-library':'back',new:'edit','search-open':'search','pin-page':'split','save-page':state.saved.includes(state.selected)?'check':'save','edit-page':'edit','share-page':'share'})) {
-  $(id).innerHTML = icon(name); $(id).title = $(id).getAttribute('aria-label');
+  renderHTML($(id), icon(name)); $(id).title = $(id).getAttribute('aria-label');
 }
 $('back-library').onclick = () => { libraryOpen = !libraryOpen; layout(); };
 $('search-open').onclick = () => { libraryOpen = true; layout(); $('search').focus(); };
