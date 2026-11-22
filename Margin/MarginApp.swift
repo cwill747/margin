@@ -328,6 +328,13 @@ struct LibraryView: View {
             revealSidebarSelection()
         }.labelStyle(.iconOnly).accessibilityHint("Show search at the top of the sidebar")
     }
+    private var newDocumentButton: some View {
+        Button("New document", systemImage: "plus") {
+            showSettings = false; composing = true; compactColumn = .detail
+        }
+        .labelStyle(.iconOnly)
+        .keyboardShortcut("n", modifiers: .command)
+    }
     private var sidebarContent: some View {
         ScrollViewReader { proxy in
             List {
@@ -412,16 +419,18 @@ struct LibraryView: View {
                 if revealSearch { searchAccessibilityFocused = true; searchFocused = true }
             }
             .refreshable { await workspace.refresh() }
+            .onChange(of: composing) { _, isComposing in
+                if isComposing { visibility = .detailOnly }
+            }
             .toolbar {
                 ToolbarItem(placement: sizeClass == .compact ? .topBarTrailing : .topBarLeading) {
                     avatarButton
                 }.horizontalWhenAvailable()
                 if sizeClass == .compact {
                     ToolbarItem(placement: .primaryAction) { searchButton }
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("New document", systemImage: "square.and.pencil") {
-                            showSettings = false; composing = true; compactColumn = .detail
-                        }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Spacer()
+                        newDocumentButton
                     }
                 }
             }
@@ -438,7 +447,9 @@ struct LibraryView: View {
                         selected = document; savedOnly = false; collection = nil; query = ""
                     }, onClose: { composing = false; if selected == nil { compactColumn = .sidebar } })
                 } else {
-                    DuoReader(workspace: workspace, document: selected, companion: $companion, onNavigate: { destination in
+                    DuoReader(workspace: workspace, document: selected, onCreateDocument: {
+                        showSettings = false; composing = true; compactColumn = .detail
+                    }, companion: $companion, onNavigate: { destination in
                         revealSearch = false
                         selected = destination
                         revealSidebarSelection()
@@ -449,10 +460,9 @@ struct LibraryView: View {
             .toolbar {
                 if !composing && !showSettings {
                     ToolbarItem(placement: .primaryAction) { searchButton }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("New document", systemImage: "square.and.pencil") {
-                            showSettings = false; composing = true; compactColumn = .detail
-                        }.keyboardShortcut("n", modifiers: .command)
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Spacer()
+                        newDocumentButton
                     }
                 }
             }
