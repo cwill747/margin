@@ -178,6 +178,15 @@ final class AccessibilityTests: XCTestCase {
         try audit(compose, name: "Compose")
     }
 
+    func testReaderShowsOneNewDocumentButton() {
+        let app = launch("reader")
+        let buttons = app.buttons.matching(identifier: "New document")
+        XCTAssertTrue(buttons.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertEqual(buttons.count, 1)
+        buttons.firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["Document title"].firstMatch.waitForExistence(timeout: 5))
+    }
+
     func testKeyboardCreateAndEdit() throws {
         let create = launch("reader")
         XCTAssertTrue(create.buttons["New document"].waitForExistence(timeout: 10))
