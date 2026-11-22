@@ -114,11 +114,11 @@ extension OutlineAPITests {
 
     func testServiceTokenRedirectDoesNotRequestBrowserSignIn() async {
         var client = stubClient()
-        client.gateway.headers = [.init(name: "cf-access-client-id", value: "client")]
+        client.gateway.headers = [.init(name: "cf-access-client-id", value: " client\n")]
         XCTAssertThrowsError(try client.gateway.validatedHeaders())
-        client.gateway.headers.append(.init(name: "CF-Access-Client-Secret", value: "secret"))
+        client.gateway.headers.append(.init(name: "CF-Access-Client-Secret", value: "secret\r\n"))
         client.gateway.cookies = [.init(name: "CF_Authorization", value: "old", host: "wiki.example.com", expires: nil)]
-        StubProtocol.headers = ["Location": "https://team.cloudflareaccess.com/cdn-cgi/access/login/wiki.example.com"]
+        StubProtocol.headers = ["Location": "https://team.cloudflareaccess.com/cdn-cgi/access/login/wiki.example.com", "CF-Ray": "0123456789abcdef-IAD"]
         defer { StubProtocol.headers = [:] }
         StubProtocol.respond = { request in
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
@@ -131,8 +131,9 @@ extension OutlineAPITests {
             let _: Envelope<OutlineDocument> = try await client.request("documents.info")
             XCTFail("Expected service token error")
         } catch {
+            XCTAssertTrue(error.localizedDescription.contains("0123456789abcdef-IAD"))
             XCTAssertTrue(error is APIError)
-            XCTAssertTrue(error.localizedDescription.contains("service token"))
+            XCTAssertTrue(error.localizedDescription.contains("redirected the service token request"))
         }
     }
 

@@ -94,7 +94,12 @@ struct OutlineAPI {
                 // Present the workspace origin for sign-in, never a server-supplied
                 // redirect URL containing state or the API authorization header.
                 if gateway.usesServiceToken {
-                    throw APIError(message: "Cloudflare Access did not accept the service token. Check its client ID, client secret, and access policy for this workspace.")
+                    var message = "Cloudflare Access redirected the service token request to browser sign-in. Check that this workspace has a Service Auth policy for this token."
+                    if let ray = response.value(forHTTPHeaderField: "cf-ray"),
+                       ray.range(of: #"^[0-9a-fA-F]{16,32}(-[A-Za-z]{3})?$"#, options: .regularExpression) != nil {
+                        message += " Cloudflare Ray ID: " + ray
+                    }
+                    throw APIError(message: message)
                 }
                 throw GatewaySignInRequired(workspaceURL: baseURL)
             }

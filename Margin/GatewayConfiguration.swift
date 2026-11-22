@@ -28,13 +28,15 @@ struct GatewayConfiguration: Codable, Equatable {
         let reserved: Set<String> = ["authorization", "cookie", "host", "content-type", "content-length", "connection", "transfer-encoding", "proxy-authorization", "origin", "referer"]
         for header in headers where !header.name.isEmpty || !header.value.isEmpty {
             let name = header.name.trimmingCharacters(in: .whitespaces)
+            let value = Self.serviceHeaderNames.contains(name.lowercased())
+                ? header.value.trimmingCharacters(in: .whitespacesAndNewlines) : header.value
             guard !name.isEmpty, name.unicodeScalars.allSatisfy({ allowed.contains($0) }),
                   !reserved.contains(name.lowercased()),
-                  !header.value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
                   !result.keys.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
                 throw APIError(message: "Use unique HTTP header names and single-line values. Authorization, Cookie, and transport headers are managed by Margin.")
             }
-            result[name] = header.value
+            result[name] = value
         }
         if usesServiceToken {
             let normalized = Dictionary(uniqueKeysWithValues: result.map { ($0.key.lowercased(), $0.value) })

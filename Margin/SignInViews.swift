@@ -35,11 +35,24 @@ struct GatewayFields: View {
     var body: some View {
         ForEach($configuration.headers) { $header in
             VStack(alignment: .leading) {
+                let name = header.name.trimmingCharacters(in: .whitespaces).lowercased()
+                let clientID = name == "cf-access-client-id"
+                let serviceField = clientID || name == "cf-access-client-secret"
+                let label = clientID ? "Cloudflare client ID" : "Cloudflare client secret"
                 HStack {
-                    TextField("Header name", text: $header.name).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if serviceField {
+                        Text(label)
+                    } else {
+                        TextField("Header name", text: $header.name).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                     Button("Remove header", systemImage: "minus.circle") { configuration.headers.removeAll { $0.id == header.id } }.labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                 }
-                SecureField("Header value", text: $header.value).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if clientID {
+                    TextField("Client ID", text: $header.value).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityLabel(label)
+                } else {
+                    SecureField(serviceField ? "Client secret" : "Header value", text: $header.value).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .accessibilityLabel(serviceField ? label : "Header value")
+                }
             }
         }
         Button("Add header", systemImage: "plus") { configuration.headers.append(.init()) }
