@@ -12,6 +12,13 @@ struct OutlineDocument: Codable, Identifiable, Hashable {
     var revision: Int?
     var parentDocumentId: String?
     var publishedAt: String?
+
+    func hasCurrentContent(for remote: OutlineDocument) -> Bool {
+        guard id == remote.id, text != nil else { return false }
+        if let revision, let other = remote.revision, revision != other { return false }
+        if let updatedAt, let other = remote.updatedAt { return updatedAt == other }
+        return revision != nil && revision == remote.revision
+    }
 }
 struct OutlineCollection: Codable, Identifiable, Hashable {
     let id: String
@@ -139,7 +146,7 @@ struct OutlineAPI {
         return try JSONDecoder().decode(Envelope<T>.self, from: data)
     }
 
-    func list<T: Decodable>(_ method: String, body: [String: Any] = [:]) async throws -> [T] {
+    func list<T: Decodable>(_ method: String, body: [String: Any] = [:], stopAfterPage: ([T]) -> Bool = { _ in false }) async throws -> [T] {
         var items: [T] = []
         var offset = 0
         while true {
@@ -149,7 +156,7 @@ struct OutlineAPI {
             params["offset"] = offset
             let response: Envelope<[T]> = try await request(method, body: params)
             items += response.data
-            if response.data.isEmpty || response.pagination?.nextPath == nil { break }
+            if response.data.isEmpty || response.pagination?.nextPath == nil || stopAfterPage(response.data) { break }
             offset += response.data.count
         }
         return items
@@ -269,6 +276,8 @@ struct LibrarySnapshot: Codable {
     var documents: [OutlineDocument]
     var trees: [String: [OutlineTreeNode]]
     var draftIDs: Set<String>
+    var reconciledAt: Date?
+    var publishedWatermark: String?
 }
 
 // Shared by API value copies so pagination also observes the offline switch.

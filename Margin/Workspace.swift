@@ -24,6 +24,10 @@ struct LocalDraft: Codable, Equatable {
     var collections: [OutlineCollection] = []
     var documents: [OutlineDocument] = []
     var trees: [String: [OutlineTreeNode]] = [:]
+    private var libraryVersion = 0
+    private var refreshPending = false
+    private var reconciledAt: Date?
+    private var publishedWatermark: String?
     var draftIDs: Set<String> = []
     var saved: [OutlineDocument] = []
     var error: String?
@@ -75,6 +79,7 @@ struct LocalDraft: Codable, Equatable {
             if let data = try? Data(contentsOf: cacheURL) { saved = (try? JSONDecoder().decode([OutlineDocument].self, from: data)) ?? [] }
             if let data = try? Data(contentsOf: libraryURL), let snapshot = try? JSONDecoder().decode(LibrarySnapshot.self, from: data) {
                 collections = snapshot.collections; documents = snapshot.documents; trees = snapshot.trees; draftIDs = snapshot.draftIDs
+                reconciledAt = snapshot.reconciledAt; publishedWatermark = snapshot.publishedWatermark
             }
             if let data = try? Data(contentsOf: profileURL) { profile = try? JSONDecoder().decode(OutlineProfile.self, from: data) }
             if let data = try? Data(contentsOf: avatarURL) { avatar = UIImage(data: data) }
@@ -142,31 +147,86 @@ struct LocalDraft: Codable, Equatable {
         guard !workOffline, !busy, let api else { return }
         let current = generation
         busy = true; error = nil; syncError = nil
-        defer { if generation == current { busy = false } }
+        defer {
+            if generation == current {
+                busy = false
+                if refreshPending {
+                    refreshPending = false
+                    Task { await refresh() }
+                }
+            }
+        }
         do {
             try await flushQueue()
             guard !workOffline, generation == current else { return }
+            let version = libraryVersion
+            let full = reconciledAt.map { Date().timeIntervalSince($0) >= 86400 } ?? true
+            let watermark = full ? nil : publishedWatermark
             async let collections: [OutlineCollection] = api.list("collections.list")
-            async let documents: [OutlineDocument] = api.list("documents.list", body: ["sort": "updatedAt", "direction": "DESC"])
+            async let published: [OutlineDocument] = api.list("documents.list", body: ["sort": "updatedAt", "direction": "DESC"]) { page in
+                guard let watermark, let oldest = page.last?.updatedAt else { return false }
+                return oldest < watermark
+            }
             async let drafts: [OutlineDocument] = api.list("documents.drafts")
-            let result = try await (collections, documents, drafts)
+            let result = try await (collections, published, drafts)
             guard generation == current, !workOffline else { return }
-            var trees: [String: [OutlineTreeNode]] = [:]
-            for collection in result.0 {
+            let collectionIDs = Set(result.0.map(\.id))
+            let previous = Dictionary(documents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let publishedIDs = Set(result.1.map(\.id))
+            let newDraftIDs = Set(result.2.map(\.id))
+            var changedCollections = Set<String>()
+            for doc in result.1 + result.2 {
+                let old = previous[doc.id]
+                if old?.title != doc.title || old?.parentDocumentId != doc.parentDocumentId ||
+                    old?.collectionId != doc.collectionId || draftIDs.contains(doc.id) != newDraftIDs.contains(doc.id) {
+                    if let id = old?.collectionId { changedCollections.insert(id) }
+                    if let id = doc.collectionId { changedCollections.insert(id) }
+                }
+            }
+            var nextTrees = trees.filter { collectionIDs.contains($0.key) }
+            for collection in result.0 where full || nextTrees[collection.id] == nil || changedCollections.contains(collection.id) {
                 let tree: Envelope<[OutlineTreeNode]> = try await api.request("collections.documents", body: ["id": collection.id])
-                trees[collection.id] = tree.data
+                nextTrees[collection.id] = tree.data
             }
             guard generation == current, !workOffline else { return }
-            self.trees = trees
-            self.draftIDs = Set(result.2.map(\.id))
-            self.collections = result.0
-            let publishedIDs = Set(result.1.map(\.id))
-            self.documents = result.2.filter { !publishedIDs.contains($0.id) } + result.1
-            try writePrivate(JSONEncoder().encode(LibrarySnapshot(collections: self.collections, documents: self.documents, trees: trees, draftIDs: self.draftIDs)), to: libraryURL)
-            await refreshProfile()
+            guard libraryVersion == version else { refreshPending = true; return }
+            let retained = watermark == nil ? [] : documents.filter {
+                !draftIDs.contains($0.id) && !newDraftIDs.contains($0.id) && !publishedIDs.contains($0.id) &&
+                    ($0.collectionId.map(collectionIDs.contains) ?? true)
+            }
+            documents = result.2.filter { !publishedIDs.contains($0.id) } + result.1 + retained
+            trees = nextTrees; draftIDs = newDraftIDs; self.collections = result.0
+            publishedWatermark = result.1.first?.updatedAt
+            if full { reconciledAt = Date() }
+            try persistLibrary()
+            if full || profile == nil { await refreshProfile() }
             await syncOffline()
 
         } catch { if generation == current, !workOffline { self.error = error.localizedDescription; syncError = error.localizedDescription } }
+    }
+    private func persistLibrary() throws {
+        let snapshot = LibrarySnapshot(collections: collections, documents: documents, trees: trees,
+                                      draftIDs: draftIDs, reconciledAt: reconciledAt, publishedWatermark: publishedWatermark)
+        try writePrivate(JSONEncoder().encode(snapshot), to: libraryURL)
+    }
+
+    private func recordWrite(_ document: OutlineDocument, previous: OutlineDocument?) {
+        libraryVersion += 1
+        documents.removeAll { $0.id == document.id }
+        documents.insert(document, at: 0)
+        if document.publishedAt == nil { draftIDs.insert(document.id) } else { draftIDs.remove(document.id) }
+        if document.publishedAt != nil && (previous?.publishedAt == nil || previous?.title != document.title ||
+            previous?.parentDocumentId != document.parentDocumentId || previous?.collectionId != document.collectionId) {
+            if let id = document.collectionId { trees.removeValue(forKey: id) }
+            if let id = previous?.collectionId { trees.removeValue(forKey: id) }
+            if !flushing {
+                if busy { refreshPending = true } else { Task { await refresh() } }
+            }
+        }
+        if offlineMode == .everything && document.text != nil {
+            do { try saveOffline(document) } catch { syncError = error.localizedDescription }
+        }
+        do { try persistLibrary() } catch { syncError = error.localizedDescription }
     }
     func search(_ query: String) async throws -> [OutlineDocument] {
         guard !workOffline, let api else { return documents.filter { $0.title.localizedCaseInsensitiveContains(query) || ($0.text ?? "").localizedCaseInsensitiveContains(query) } }
@@ -221,9 +281,8 @@ struct LocalDraft: Codable, Equatable {
             document = OutlineDocument(id: UUID().uuidString, title: title, text: text, collectionId: collection)
         }
         guard generation == current else { throw CancellationError() }
-        documents.insert(document, at: 0)
-        if !publish { draftIDs.insert(document.id) }
-        if api != nil { await refresh() }
+        if api != nil { recordWrite(document, previous: nil) }
+        else { documents.insert(document, at: 0); if !publish { draftIDs.insert(document.id) } }
         return document
     }
     func update(_ original: OutlineDocument, title: String, text: String, revision: Int?, publish: Bool, collection: String?) async throws -> OutlineDocument {
@@ -237,7 +296,7 @@ struct LocalDraft: Codable, Equatable {
                 _ = try DocumentChange.body(original: base, title: title, text: text, revision: revision, publish: publish, collection: collection)
             }
             try enqueue(PendingChange(original: base, document: updated, publish: publish))
-            if !workOffline { await refresh() }
+            if !workOffline { Task { await refresh() } }
             return updated
         }
         let current = generation
@@ -251,9 +310,10 @@ struct LocalDraft: Codable, Equatable {
             if publish { updated.publishedAt = ISO8601DateFormatter().string(from: Date()); updated.collectionId = collection }
         }
         guard generation == current else { throw CancellationError() }
-        if let index = documents.firstIndex(where: { $0.id == updated.id }) { documents[index] = updated }
-        if saved.contains(where: { $0.id == updated.id }) { try? saveOffline(updated) }
-        if api != nil { await refresh() }
+        if api != nil { recordWrite(updated, previous: original) }
+        else if let index = documents.firstIndex(where: { $0.id == updated.id }) { documents[index] = updated }
+        if offlineMode != .everything && saved.contains(where: { $0.id == updated.id }) { try? saveOffline(updated) }
+        if publish { draftIDs.remove(updated.id) }
         return updated
     }
     func syncPage(_ document: OutlineDocument) async throws {
@@ -270,7 +330,12 @@ struct LocalDraft: Codable, Equatable {
     func syncOffline() async {
         guard !workOffline, !syncing, queue.changes.isEmpty, let api else { return }
         let current = generation
-        let targets = offlineMode == .everything ? documents : saved
+        let cached = Dictionary(saved.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let listed = Dictionary(documents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let targets = (offlineMode == .everything ? documents : saved).filter { target in
+            guard let remote = listed[target.id] else { return true }
+            return cached[target.id]?.hasCurrentContent(for: remote) != true
+        }
         guard !targets.isEmpty else { return }
         syncing = true; syncCompleted = 0; syncTotal = targets.count; syncError = nil
         defer { if current == generation { syncing = false } }
@@ -281,7 +346,9 @@ struct LocalDraft: Codable, Equatable {
                 let response: Envelope<OutlineDocument> = try await api.request("documents.info", body: ["id": document.id])
                 guard current == generation, !workOffline, queue.changes.isEmpty else { return }
                 guard response.data.text != nil else { throw APIError(message: "Missing page content") }
-                try saveOffline(response.data)
+                if saved.first(where: { $0.id == document.id }) == cached[document.id] {
+                    try saveOffline(response.data)
+                }
             } catch is CancellationError { return
             } catch {
                 guard !workOffline else { return }
@@ -330,7 +397,8 @@ struct LocalDraft: Codable, Equatable {
             next.downloads = next.downloads.map { $0.id == change.document.id ? response.data : $0 }
             try storeQueue(next)
             documents.removeAll { $0.id == change.document.id }
-            documents.insert(response.data, at: 0)
+            draftIDs.remove(change.document.id)
+            recordWrite(response.data, previous: change.original)
             if response.data.id != change.document.id {
                 saved.removeAll { $0.id == change.document.id }
                 try persist(saved)
@@ -407,6 +475,7 @@ struct LocalDraft: Codable, Equatable {
         guard pendingCount == 0 else { error = "Sync queued changes before disconnecting."; return }
         generation = UUID()
         await api?.oauth?.invalidate()
+        refreshPending = false; reconciledAt = nil; publishedWatermark = nil
         api = nil; demo = false; collections = []; documents = []; trees = [:]; draftIDs = []; saved = []; error = nil; busy = false
         CredentialStore.delete()
         UserDefaults.standard.removeObject(forKey: "workspace")

@@ -155,6 +155,33 @@ extension OutlineAPITests {
         config.protocolClasses = [StubProtocol.self]
         return OutlineAPI(baseURL: URL(string: "https://wiki.example.com")!, token: "test-token", configuration: config)
     }
+    func testIncrementalListStopsAtKnownPage() async throws {
+        var requests = 0
+        StubProtocol.respond = { _ in
+            requests += 1
+            XCTAssertEqual(requests, 1)
+            return (200, #"{"data":[{"id":"a","title":"A","updatedAt":"2026-01-01"}],"pagination":{"nextPath":"next"}}"#)
+        }
+        let docs: [OutlineDocument] = try await stubClient().list("documents.list") { $0.last?.updatedAt == "2026-01-01" }
+        XCTAssertEqual(docs.map(\.id), ["a"])
+    }
+
+    func testOfflineContentRequiresMatchingVersionAndBody() {
+        var local = OutlineDocument(id: "a", title: "A", text: "body", revision: 1)
+        var remote = local
+        XCTAssertTrue(local.hasCurrentContent(for: remote))
+        remote.revision = 2
+        XCTAssertFalse(local.hasCurrentContent(for: remote))
+        local.revision = nil
+        remote.revision = nil
+        XCTAssertFalse(local.hasCurrentContent(for: remote))
+        local.updatedAt = "today"
+        remote.updatedAt = "today"
+        XCTAssertTrue(local.hasCurrentContent(for: remote))
+        local.text = nil
+        XCTAssertFalse(local.hasCurrentContent(for: remote))
+    }
+
     func testPaginationStaysOnWorkspaceOrigin() async throws {
         var count = 0
         StubProtocol.respond = { request in
