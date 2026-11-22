@@ -146,6 +146,11 @@ final class AccessibilityTests: XCTestCase {
         try audit(app, name: "Reference pane")
         app.buttons["Close reference"].tap()
         XCTAssertTrue(app.buttons["Edit document"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["New document"].exists)
+        XCTAssertTrue(app.buttons["More document actions"].exists)
+        app.buttons["More document actions"].tap()
+        XCTAssertTrue(app.buttons["Keep beside"].exists)
+        app.buttons["Cancel"].tap()
         app.buttons["Edit document"].tap()
         XCTAssertTrue(app.textViews["Document content"].waitForExistence(timeout: 5))
         try audit(app, name: "Editor")
@@ -174,6 +179,14 @@ final class AccessibilityTests: XCTestCase {
     }
 
     func testKeyboardCreateAndEdit() throws {
+        let create = launch("reader")
+        XCTAssertTrue(create.buttons["New document"].waitForExistence(timeout: 10))
+        XCTAssertTrue(create.buttons["Edit document"].exists)
+        XCTAssertTrue(create.buttons["More document actions"].exists)
+        create.buttons["New document"].tap()
+        let composeTitle = create.descendants(matching: .any)["Document title"].firstMatch
+        XCTAssertTrue(composeTitle.waitForExistence(timeout: 5))
+        create.terminate()
         let app = launch("reader")
         XCTAssertTrue(app.buttons["New document"].waitForExistence(timeout: 10))
         app.typeKey("n", modifierFlags: .command)

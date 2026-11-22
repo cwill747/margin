@@ -7,6 +7,7 @@ struct DuoReader: View {
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Bindable var workspace: Workspace
     let document: OutlineDocument?
+    let onCreateDocument: () -> Void
     @Binding var companion: OutlineDocument?
     let onNavigate: (OutlineDocument) -> Void
     @State private var showReference = false
@@ -54,6 +55,12 @@ struct DuoReader: View {
             }
         }.navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .onChange(of: document?.id) { _, _ in showReference = false }
+            .toolbar {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Spacer()
+                    newDocumentButton
+                }
+            }
     }
     private var referenceHeader: some View {
         HStack {
@@ -87,6 +94,7 @@ struct ReaderView: View {
     @State private var editingDocument: OutlineDocument?
     @Environment(\.openURL) private var openURL
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @AppStorage("readingFontSize") private var fontSize = 18.0
     var document: OutlineDocument { loaded?.id == original.id ? loaded! : original }
@@ -132,7 +140,8 @@ struct ReaderView: View {
         }
         .toolbar {
             if onPin != nil && editingDocument == nil && isVisible {
-                ToolbarItemGroup(placement: .primaryAction) { readerActions }
+                ToolbarItem(placement: .primaryAction) { editButton }
+                ToolbarItem(placement: .secondaryAction) { readerMoreActions }
             }
         }
     }
@@ -140,7 +149,7 @@ struct ReaderView: View {
     private var readingContent: some View {
         VStack(spacing: 0) {
             if onPin == nil {
-                HStack { readerActions }.buttonStyle(ReaderActionStyle()).padding(.horizontal, 12).background(palette.surface)
+                HStack { referenceActions }.buttonStyle(ReaderActionStyle()).padding(.horizontal, 12).background(palette.surface)
             }
             if loading { ProgressView("Loading document").controlSize(.small) }
             if offline { Label("Saved copy", systemImage: "wifi.slash").font(.caption).foregroundStyle(palette.secondary) }
@@ -182,37 +191,55 @@ struct ReaderView: View {
         }
     }
 
-    @ViewBuilder private var readerActions: some View {
-                if let onPin { Button("Keep beside", systemImage: "rectangle.split.2x1") { onPin(document) }.labelStyle(.iconOnly) }
-                Button(workspace.workOffline ? "Queue page download" : (isSaved ? "Sync page again" : "Sync page offline"), systemImage: isSaved ? "checkmark.circle" : "arrow.down.circle") {
-                    syncingPage = true
-                    Task {
-                        do { try await workspace.syncPage(document); AccessibilityNotification.Announcement(workspace.workOffline ? "Page download queued" : "Page saved for offline reading").post() }
-                        catch { self.error = error.localizedDescription }
-                        syncingPage = false
-                    }
-                }.labelStyle(.iconOnly).disabled(loading || syncingPage)
-                    .accessibilityActions {
-                        if isSaved {
-                            Button("Remove offline copy") {
-                                do { try workspace.removeOffline(document) } catch { self.error = error.localizedDescription }
-                            }
-                        }
-                    }
-                    .contextMenu {
-                        if isSaved {
-                            Button("Remove offline copy", systemImage: "trash", role: .destructive) {
-                                do { try workspace.removeOffline(document) } catch { self.error = error.localizedDescription }
-                            }
-                        }
-                    }
-                Button("Edit", systemImage: "square.and.pencil") { editingDocument = document }
-                    .accessibilityLabel("Edit document")
-                    .disabled(document.text == nil || loading)
-                if let url = documentURL {
-                    ShareLink(item: url).labelStyle(.iconOnly)
+    private var editButton: some View {
+        Button("Edit", systemImage: "square.and.pencil") { editingDocument = document }
+            .accessibilityLabel("Edit document")
+            .disabled(document.text == nil || loading)
+    }
 
+    private var newDocumentButton: some View {
+        Button("New document", systemImage: "plus", action: onCreateDocument)
+            .labelStyle(.iconOnly)
+            .keyboardShortcut("n", modifiers: .command)
+    }
+
+    private var readerMoreActions: some View {
+        Menu {
+            if let onPin {
+                Button("Keep beside", systemImage: "rectangle.split.2x1") { onPin(document) }
+            }
+            offlineButton
+            if isSaved {
+                Button("Remove offline copy", systemImage: "trash", role: .destructive) {
+                    do { try workspace.removeOffline(document) } catch { self.error = error.localizedDescription }
                 }
+            }
+            if let url = documentURL { ShareLink("Share document", item: url) }
+        } label: {
+            Label("More actions", systemImage: "ellipsis")
+        }
+        .labelStyle(.iconOnly)
+        .accessibilityLabel("More document actions")
+    }
+
+    @ViewBuilder private var referenceActions: some View {
+        if let onPin { Button("Keep beside", systemImage: "rectangle.split.2x1") { onPin(document) }.labelStyle(.iconOnly) }
+        offlineButton
+        editButton
+        if let url = documentURL { ShareLink(item: url).labelStyle(.iconOnly) }
+    }
+
+    private var offlineButton: some View {
+        Button(workspace.workOffline ? "Queue page download" : (isSaved ? "Sync page again" : "Sync page offline"), systemImage: isSaved ? "checkmark.circle" : "arrow.down.circle") {
+            syncingPage = true
+            Task {
+                do { try await workspace.syncPage(document); AccessibilityNotification.Announcement(workspace.workOffline ? "Page download queued" : "Page saved for offline reading").post() }
+                catch { self.error = error.localizedDescription }
+                syncingPage = false
+            }
+        }
+        .disabled(loading || syncingPage)
+        .accessibilityLabel(workspace.workOffline ? "Queue page download" : (isSaved ? "Sync page again" : "Sync page offline"))
     }
 
     private func load() async {
