@@ -334,6 +334,7 @@ struct LibraryView: View {
                                     .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * (compactSidebar ? 10 : 16))
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
                                     .contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
+                                    .id(document.id)
                                 }
                                 if nodes.isEmpty { Text("No documents").foregroundStyle(palette.secondary) }
                             } else if workspace.busy { ProgressView() }
@@ -439,7 +440,15 @@ struct LibraryView: View {
                         .accessibilityFocused($searchAccessibilityFocused)
                         .frame(minHeight: 44)
                     if !query.isEmpty {
-                        Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
+                        Button("Clear search", systemImage: "xmark.circle.fill") {
+                            query = ""
+                            guard selected != nil else { return }
+                            searchFocused = false
+                            searchAccessibilityFocused = false
+                            revealSearch = false
+                            savedOnly = false
+                            revealSidebarSelection()
+                        }
                             .labelStyle(.iconOnly).buttonStyle(.plain).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                     }
                 }
