@@ -45,13 +45,24 @@ struct DuoReader: View {
                     }
                 }
             } else {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        Image(systemName: "rectangle.split.2x1").font(.system(size: 52, weight: .ultraLight)).foregroundStyle(.tint).accessibilityHidden(true)
-                        Text("Space for a second thought.").font(.system(.largeTitle, design: .serif)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                        Text("Choose a document to begin. Keep a reference beside it as you explore.").foregroundStyle(palette.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-                    }.padding(32).frame(maxWidth: .infinity, minHeight: geometry.size.height)
-                }.background(palette.background)
+                HStack(spacing: 5.6) {
+                    RoundedRectangle(cornerRadius: 3.2)
+                        .opacity(0.65)
+                    RoundedRectangle(cornerRadius: 3.2)
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(palette.background)
+                                .frame(width: 2, height: 33)
+                                .padding(.leading, 5)
+                        }
+                }
+                .frame(width: 63, height: 54)
+                .foregroundStyle(palette.foreground)
+                .opacity(0.2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(palette.background)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("No article selected")
             }
         }.navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .onChange(of: document?.id) { _, _ in showReference = false }
