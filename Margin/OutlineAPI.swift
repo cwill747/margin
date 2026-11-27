@@ -79,6 +79,18 @@ struct OutlineAPI {
     }
 
     func request<T: Decodable>(_ method: String, body: [String: Any] = [:]) async throws -> Envelope<T> {
+        try JSONDecoder().decode(Envelope<T>.self, from: await responseData(method, body: body))
+    }
+
+    func deletePage(id: String) async throws {
+        struct Result: Decodable { let success: Bool }
+        let data = try await responseData("documents.delete", body: ["id": id])
+        guard try JSONDecoder().decode(Result.self, from: data).success else {
+            throw APIError(message: "The workspace could not delete this page.")
+        }
+    }
+
+    private func responseData(_ method: String, body: [String: Any]) async throws -> Data {
         try networkPolicy?.check()
         var request = URLRequest(url: baseURL.appendingPathComponent("api/" + method))
         request.httpMethod = "POST"
@@ -147,7 +159,7 @@ struct OutlineAPI {
             default: throw APIError(message: "Outline returned HTTP \(response.statusCode). Please try again.")
             }
         }
-        return try JSONDecoder().decode(Envelope<T>.self, from: data)
+        return data
     }
 
     func list<T: Decodable>(_ method: String, body: [String: Any] = [:], stopAfterPage: ([T]) -> Bool = { _ in false }) async throws -> [T] {

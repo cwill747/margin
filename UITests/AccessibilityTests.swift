@@ -146,6 +146,24 @@ final class AccessibilityTests: XCTestCase {
         }
     }
 
+    func testDeletePageRequiresConfirmation() throws {
+        let app = launch("reader")
+        let menu = app.buttons["More document actions"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        let heading = app.staticTexts["document-heading"]
+        let title = heading.label
+        menu.tap()
+        app.buttons["Delete page"].tap()
+        let alert = app.alerts["Are you sure?"]
+        XCTAssertTrue(alert.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", title)).firstMatch.exists)
+        alert.buttons["Cancel"].tap()
+        XCTAssertEqual(heading.label, title)
+        menu.tap()
+        app.buttons["Delete page"].tap()
+        alert.buttons["Delete page"].tap()
+        XCTAssertTrue(heading.waitForNonExistence(timeout: 5))
+    }
+
     func testReferenceAndEditor() throws {
         let app = launch("reference")
         XCTAssertTrue(app.staticTexts.matching(identifier: "document-heading").firstMatch.waitForExistence(timeout: 10))

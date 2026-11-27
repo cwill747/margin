@@ -9,6 +9,7 @@ struct DuoReader: View {
     let document: OutlineDocument?
     let onCreateDocument: () -> Void
     @Binding var companion: OutlineDocument?
+    let onDeleted: (Set<String>) -> Void
     let onNavigate: (OutlineDocument) -> Void
     @State private var showReference = false
     var body: some View {
@@ -27,7 +28,7 @@ struct DuoReader: View {
                     // Keep both readers alive as the available width changes.
                     // Folding or switching panes must not recreate their scroll views.
                     HStack(spacing: 0) {
-                        ReaderView(workspace: workspace, original: document, isVisible: mainVisible, onPin: { self.companion = $0 }, onNavigate: onNavigate)
+                        ReaderView(workspace: workspace, original: document, isVisible: mainVisible, onPin: { self.companion = $0 }, onDeleted: onDeleted, onNavigate: onNavigate)
                             .frame(width: paneWidth)
                             .frame(width: mainVisible ? paneWidth : 0, alignment: .leading)
                             .clipped().allowsHitTesting(mainVisible).accessibilityHidden(!mainVisible)
@@ -36,7 +37,7 @@ struct DuoReader: View {
                             let referenceVisible = wide || showReference
                             VStack(spacing: 0) {
                                 referenceHeader
-                                ReaderView(workspace: workspace, original: companion, isVisible: referenceVisible, onPin: nil, onNavigate: { self.companion = $0 })
+                                ReaderView(workspace: workspace, original: companion, isVisible: referenceVisible, onPin: nil, onDeleted: onDeleted, onNavigate: { self.companion = $0 })
                             }
                             .frame(width: paneWidth)
                             .frame(width: referenceVisible ? paneWidth : 0, alignment: .leading)
@@ -98,12 +99,15 @@ struct ReaderView: View {
     let original: OutlineDocument
     let isVisible: Bool
     let onPin: ((OutlineDocument) -> Void)?
+    let onDeleted: (Set<String>) -> Void
     let onNavigate: (OutlineDocument) -> Void
     @State private var loaded: OutlineDocument?
     @State private var activeLoad: UUID?
     private var loading: Bool { activeLoad != nil }
     @State private var error: String?
     @State private var offline = false
+    @State private var confirmingDelete = false
+    @State private var deleting = false
     @State private var syncingPage = false
     @AccessibilityFocusState private var titleFocused: Bool
     // Editing is an explicit, document-scoped session. Selecting a document
@@ -155,10 +159,23 @@ struct ReaderView: View {
             editingDocument = nil
             titleFocused = isVisible && onPin != nil
         }
+        .alert("Are you sure?", isPresented: $confirmingDelete, presenting: document) { page in
+            Button("Cancel", role: .cancel) {}
+            Button("Delete page", role: .destructive) {
+                deleting = true
+                Task {
+                    defer { deleting = false }
+                    do { onDeleted(try await workspace.deletePage(page)) }
+                    catch { self.error = error.localizedDescription }
+                }
+            }
+        } message: { page in
+            Text("Move “\(page.title)” and its subpages to the trash?")
+        }
         .toolbar {
             if onPin != nil && editingDocument == nil && isVisible {
                 ToolbarItem(placement: .primaryAction) { editButton }
-                ToolbarItem(placement: .secondaryAction) { readerMoreActions }
+                ToolbarItem(placement: .primaryAction) { readerMoreActions }
             }
         }
     }
@@ -226,6 +243,9 @@ struct ReaderView: View {
                 }
             }
             if let url = documentURL { ShareLink("Share document", item: url) }
+            Button("Delete page", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                .disabled(deleting || workspace.workOffline)
+
         } label: {
             Label("More actions", systemImage: "ellipsis")
         }

@@ -560,7 +560,14 @@ struct LibraryView: View {
                 } else {
                     DuoReader(workspace: workspace, document: selected, onCreateDocument: {
                         showSettings = false; composing = true; compactColumn = .detail
-                    }, companion: $companion, onNavigate: { destination in
+                    }, companion: $companion, onDeleted: { ids in
+                        results.removeAll { ids.contains($0.id) }
+                        if let companion, ids.contains(companion.id) { self.companion = nil }
+                        if let selected, ids.contains(selected.id) {
+                            self.selected = nil
+                            compactColumn = .sidebar
+                        }
+                    }, onNavigate: { destination in
                         revealSearch = false
                         selected = destination
                         revealSidebarSelection()

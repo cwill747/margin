@@ -318,6 +318,46 @@ struct LocalDraft: Codable, Equatable {
         if publish { draftIDs.remove(updated.id) }
         return updated
     }
+    func deletePage(_ document: OutlineDocument) async throws -> Set<String> {
+        var removed: Set<String> = [document.id]
+        func prune(_ nodes: [OutlineTreeNode], deletingParent: Bool = false) -> [OutlineTreeNode] {
+            nodes.compactMap { node in
+                let deleting = deletingParent || node.id == document.id
+                var updated = node
+                updated.children = prune(node.children, deletingParent: deleting)
+                if deleting { removed.insert(node.id); return nil }
+                return updated
+            }
+        }
+        if let api {
+            guard !workOffline else { throw APIError(message: "Connect to your workspace to delete this page.") }
+            if pendingCount > 0 {
+                for nodes in trees.values { _ = prune(nodes) }
+            }
+            guard !flushing, !queue.changes.contains(where: { removed.contains($0.document.id) }),
+                  !queue.downloads.contains(where: { removed.contains($0.id) }) else {
+                throw APIError(message: "Finish syncing pending changes before deleting this page.")
+            }
+            let current = generation
+            try await api.deletePage(id: document.id)
+            guard current == generation else { throw CancellationError() }
+        }
+        trees = trees.mapValues { prune($0) }
+        libraryVersion += 1
+        documents.removeAll { removed.contains($0.id) }
+        saved.removeAll { removed.contains($0.id) }
+        draftIDs.subtract(removed)
+        if api != nil {
+            reconciledAt = nil
+            do {
+                try persistLibrary()
+                try persist(saved)
+            } catch { syncError = error.localizedDescription }
+            if busy { refreshPending = true } else { Task { await refresh() } }
+        }
+        return removed
+    }
+
     func syncPage(_ document: OutlineDocument) async throws {
         if workOffline {
             var next = queue
