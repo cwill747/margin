@@ -5,6 +5,8 @@ import OSLog
 struct OutlineDocument: Codable, Identifiable, Hashable {
     let id: String
     var title: String
+    var icon: String?
+    var color: String?
     var text: String?
     var url: String?
     var collectionId: String?
@@ -27,11 +29,13 @@ struct OutlineCollection: Codable, Identifiable, Hashable {
 struct OutlineTreeNode: Codable, Identifiable, Hashable {
     let id: String
     var title: String
+    var icon: String?
+    var color: String?
     var url: String?
     var children: [OutlineTreeNode]
     var nested: [OutlineTreeNode]? { children.isEmpty ? nil : children }
     func document(collectionID: String) -> OutlineDocument {
-        OutlineDocument(id: id, title: title, url: url, collectionId: collectionID)
+        OutlineDocument(id: id, title: title, icon: icon, color: color, url: url, collectionId: collectionID)
     }
 }
 struct SearchHit: Decodable { let document: OutlineDocument }

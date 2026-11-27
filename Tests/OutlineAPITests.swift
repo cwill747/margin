@@ -2,6 +2,15 @@ import XCTest
 @testable import MarginCore
 
 final class OutlineAPITests: XCTestCase {
+    func testTreeIconSurvivesSavingDocumentOffline() throws {
+        let json = ##"{"id":"notes","title":"Notes","icon":"📚","color":"#123456","children":[]}"##
+        let tree = try JSONDecoder().decode(OutlineTreeNode.self, from: Data(json.utf8))
+        let data = try JSONEncoder().encode(tree.document(collectionID: "library"))
+        let saved = try JSONDecoder().decode(OutlineDocument.self, from: data)
+        XCTAssertEqual(saved.icon, "📚")
+        XCTAssertEqual(saved.color, "#123456")
+    }
+
     func testOfflinePolicyBlocksRequestsAndCanResume() async throws {
         let policy = NetworkPolicy()
         policy.setOffline(true)

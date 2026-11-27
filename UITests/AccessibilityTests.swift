@@ -4,9 +4,10 @@ import XCTest
 final class AccessibilityTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launch(_ screen: String, palette: String = "system", largeText: Bool = false) -> XCUIApplication {
+    private func launch(_ screen: String, palette: String = "system", largeText: Bool = false, compactSidebar: Bool = false) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "-readingPalette", palette, "-readingFontSize", "18"]
+        app.launchArguments += ["-compactSidebar", compactSidebar ? "YES" : "NO"]
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launchEnvironment["MARGIN_TEST_SCREEN"] = screen
         app.launch()
@@ -90,6 +91,14 @@ final class AccessibilityTests: XCTestCase {
             scrollDown(app)
             try audit(app, name: "Onboarding lower controls")
         }
+    }
+
+    func testCompactSidebar() throws {
+        let app = launch("library", compactSidebar: true)
+        let article = app.buttons["A little more room to think"]
+        XCTAssertTrue(article.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(article.frame.height + 0.001, 44)
+        try audit(app, name: "Compact sidebar")
     }
 
     func testLibraryAndSearch() throws {

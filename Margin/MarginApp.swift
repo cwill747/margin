@@ -135,7 +135,94 @@ struct ConnectView: View {
 
 }
 
+private struct SidebarSearchField: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var focused: Bool
+    let palette: ReadingPalette
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var field: SidebarSearchField
+        init(_ field: SidebarSearchField) { self.field = field }
+        @objc func changed(_ sender: UITextField) { field.text = sender.text ?? "" }
+        func textFieldDidBeginEditing(_ textField: UITextField) { field.focused = true }
+        func textFieldDidEndEditing(_ textField: UITextField) { field.focused = false }
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            return true
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
+        field.accessibilityLabel = "Search your knowledge"
+        field.returnKeyType = .search
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        field.adjustsFontForContentSizeCategory = true
+        field.font = .preferredFont(forTextStyle: .subheadline)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.field = self
+        if field.text != text { field.text = text }
+        field.textColor = UIColor(palette.foreground)
+        field.attributedPlaceholder = NSAttributedString(string: "Search", attributes: [.foregroundColor: UIColor(palette.secondary)])
+        if focused && !field.isFirstResponder { field.becomeFirstResponder() }
+        if !focused && field.isFirstResponder { field.resignFirstResponder() }
+    }
+}
+
+private struct PageIcon: View {
+    let document: OutlineDocument
+    var fallback = "doc.text"
+
+    private static let symbols = [
+        "academicCap": "graduationcap", "beaker": "flask", "buildingBlocks": "square.3.layers.3d",
+        "browser": "macwindow", "collection": "folder", "coins": "dollarsign.circle",
+        "code": "chevron.left.forwardslash.chevron.right", "database": "externaldrive",
+        "done": "checkmark.circle", "email": "envelope", "feedback": "bubble.left",
+        "graph": "chart.bar", "hashtag": "number", "icecream": "birthday.cake",
+        "image": "photo", "internet": "network", "library": "books.vertical",
+        "lightning": "bolt", "letter": "envelope", "math": "function", "notepad": "note.text",
+        "padlock": "lock", "palette": "paintpalette", "plane": "airplane",
+        "promote": "megaphone", "question": "questionmark.circle", "server": "server.rack",
+        "sun": "sun.max", "sport": "soccerball", "smiley": "face.smiling",
+        "team": "person.3", "thumbsup": "hand.thumbsup", "truck": "box.truck",
+        "tools": "wrench.and.screwdriver", "vehicle": "car", "warning": "exclamationmark.triangle"
+    ]
+
+    private var tint: Color? {
+        guard let hex = document.color?.trimmingCharacters(in: CharacterSet(charactersIn: "#")),
+              hex.count == 6, let rgb = UInt32(hex, radix: 16) else { return nil }
+        return Color(red: Double(rgb >> 16) / 255, green: Double((rgb >> 8) & 255) / 255,
+                     blue: Double(rgb & 255) / 255)
+    }
+
+    var body: some View {
+        Group {
+            if let icon = document.icon, icon.count == 1,
+               icon.unicodeScalars.contains(where: { $0.properties.isEmoji }) {
+                Text(icon)
+            } else {
+                let name = document.icon.map { Self.symbols[$0] ?? $0 } ?? fallback
+                Image(systemName: UIImage(systemName: name) == nil ? fallback : name)
+                    .foregroundStyle(tint ?? .accentColor)
+            }
+        }.accessibilityHidden(true)
+    }
+}
+
 struct LibraryView: View {
+    @AppStorage("compactSidebar") private var compactSidebar = false
+    private var articleFont: Font { compactSidebar ? .subheadline : .body }
+    private var articleInsets: EdgeInsets? {
+        compactSidebar ? EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) : nil
+    }
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -150,7 +237,7 @@ struct LibraryView: View {
     @State private var sidebarScrollTarget = "sidebar-search"
     @State private var revealSearch = false
     @State private var expandedNodes: Set<String> = []
-    @FocusState private var searchFocused: Bool
+    @State private var searchFocused = false
     @AccessibilityFocusState private var searchAccessibilityFocused: Bool
     @State private var results: [OutlineDocument] = []
     @State private var searching = false
@@ -202,7 +289,10 @@ struct LibraryView: View {
             .accessibilityHint("Expand or collapse this collection")
     }
     private func sidebarDocument(_ node: OutlineTreeNode, collectionID: String) -> OutlineDocument {
-        workspace.documents.first(where: { $0.id == node.id }) ?? node.document(collectionID: collectionID)
+        var document = workspace.documents.first(where: { $0.id == node.id }) ?? node.document(collectionID: collectionID)
+        document.icon = node.icon ?? document.icon
+        document.color = node.color ?? document.color
+        return document
     }
     private func collectionSection(_ collection: OutlineCollection) -> some View {
                         Section {
@@ -225,7 +315,7 @@ struct LibraryView: View {
                                             HStack {
                                                 Group {
                                                     if dynamicTypeSize.isAccessibilitySize { Text(row.node.title) }
-                                                    else { Label(row.node.title, systemImage: "doc.text").lineLimit(2) }
+                                                    else { Label { Text(row.node.title) } icon: { PageIcon(document: document) }.lineLimit(2) }
                                                 }.fixedSize(horizontal: false, vertical: true)
                                                 Spacer(minLength: 0)
                                                 if selected?.id == document.id { Image(systemName: "checkmark").accessibilityHidden(true) }
@@ -236,6 +326,8 @@ struct LibraryView: View {
                                         .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
                                         .accessibilityAction(named: "Keep beside") { companion = document }
                                     }
+                                    .font(articleFont)
+                                    .listRowInsets(articleInsets)
                                     .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * 16)
                                     .id(document.id)
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
@@ -340,15 +432,15 @@ struct LibraryView: View {
             List {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").foregroundStyle(palette.secondary).accessibilityHidden(true)
-                    TextField("Search", text: $query, prompt: Text("Search").foregroundStyle(palette.secondary), axis: .vertical).fixedSize(horizontal: false, vertical: true).accessibilityLabel("Search your knowledge")
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .focused($searchFocused).accessibilityFocused($searchAccessibilityFocused).submitLabel(.search).frame(minHeight: 44)
+                    SidebarSearchField(text: $query, focused: $searchFocused, palette: palette)
+                        .accessibilityFocused($searchAccessibilityFocused)
+                        .frame(minHeight: 44)
                     if !query.isEmpty {
                         Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
                             .labelStyle(.iconOnly).buttonStyle(.plain).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
                     }
                 }
-                .padding(.vertical, 6)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
                 .listRowBackground(palette.surface)
                 .id("sidebar-search")
                 Group {
@@ -360,7 +452,10 @@ struct LibraryView: View {
                         Section {
                             if workspace.expandedSections.contains("drafts") {
                             ForEach(workspace.documents.filter { workspace.draftIDs.contains($0.id) }) { document in
-                                Button { openSidebarDocument(document) } label: { Label(document.title, systemImage: "doc.badge.ellipsis") }.id(document.id)
+                                Button { openSidebarDocument(document) } label: {
+                                    Label { Text(document.title) } icon: { PageIcon(document: document, fallback: "doc.badge.ellipsis") }
+                                        .font(articleFont).frame(minHeight: 44)
+                                }.listRowInsets(articleInsets).id(document.id)
                             }
                             }
                         } header: {
@@ -375,13 +470,13 @@ struct LibraryView: View {
                     ForEach(visibleDocuments) { document in
                         Button { openSidebarDocument(document) } label: {
                             HStack(alignment: .top, spacing: 12) {
-                                Image(systemName: "doc.text").foregroundStyle(.tint).padding(.top, 3)
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(document.title).font(.body.weight(.medium)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2).fixedSize(horizontal: false, vertical: true)
+                                PageIcon(document: document).font(articleFont).padding(.top, 3)
+                                VStack(alignment: .leading, spacing: compactSidebar ? 1 : 5) {
+                                    Text(document.title).font(articleFont.weight(.medium)).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2).fixedSize(horizontal: false, vertical: true)
                                     Text(workspace.collections.first { $0.id == document.collectionId }?.name ?? "Document").font(.caption).foregroundStyle(palette.secondary)
                                 }
-                            }.padding(.vertical, 5)
-                        }.accessibilityAction(named: "Keep beside") { companion = document }
+                            }.padding(.vertical, compactSidebar ? 0 : 5).frame(minHeight: 44)
+                        }.listRowInsets(articleInsets).accessibilityAction(named: "Keep beside") { companion = document }
                         .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
                         .id(document.id).contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                     }
@@ -473,6 +568,7 @@ struct LibraryView: View {
 }
 
 private struct WorkspaceSettings: View {
+    @AppStorage("compactSidebar") private var compactSidebar = false
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Bindable var workspace: Workspace
     let onClose: () -> Void
@@ -516,6 +612,7 @@ private struct WorkspaceSettings: View {
                     }
                 }
                 AppearanceSettings()
+                Section("Sidebar") { Toggle("Compact article rows", isOn: $compactSidebar) }
                 Section {
                     Toggle("Work offline", isOn: $workspace.workOffline)
                     if workspace.pendingCount > 0 { Text("\(workspace.pendingCount) changes queued to sync") }
