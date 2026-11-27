@@ -219,9 +219,9 @@ private struct PageIcon: View {
 
 struct LibraryView: View {
     @AppStorage("compactSidebar") private var compactSidebar = false
-    private var articleFont: Font { compactSidebar ? .subheadline : .body }
+    private var articleFont: Font { compactSidebar ? .footnote : .body }
     private var articleInsets: EdgeInsets? {
-        compactSidebar ? EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) : nil
+        compactSidebar ? EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8) : nil
     }
     @AppStorage("readingPalette") private var palette: ReadingPalette = .system
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -300,12 +300,12 @@ struct LibraryView: View {
                             if let nodes = workspace.trees[collection.id] {
                                 ForEach(sidebarRows(nodes), id: \.node.id) { row in
                                     let document = sidebarDocument(row.node, collectionID: collection.id)
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: compactSidebar ? 2 : 8) {
                                         if !row.node.children.isEmpty {
                                             Button {
                                                 if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
                                             } label: {
-                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right").font(.system(size: 17, weight: .semibold))
+                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right").font(.system(size: compactSidebar ? 13 : 17, weight: .semibold))
                                                     .frame(width: 44, height: 44).contentShape(Rectangle())
                                             }.buttonStyle(.plain)
                                                 .accessibilityLabel("Children of " + row.node.title)
@@ -330,7 +330,7 @@ struct LibraryView: View {
                                     }
                                     .font(articleFont)
                                     .listRowInsets(articleInsets)
-                                    .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * 16)
+                                    .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * (compactSidebar ? 10 : 16))
                                     .id(document.id)
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
                                     .contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
@@ -496,6 +496,10 @@ struct LibraryView: View {
             
                 }.listRowBackground(palette.surface)
             }
+            .transformEnvironment(\.defaultMinListRowHeight) { height in
+                if compactSidebar { height = 44 }
+            }
+            .listSectionSpacing(compactSidebar ? .compact : .default)
             .appSurface()
             .navigationTitle("Margin")
             .scrollDismissesKeyboard(.interactively)
