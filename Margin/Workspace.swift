@@ -510,12 +510,32 @@ struct LocalDraft: Codable, Equatable {
             "getting-started": [.init(id: "welcome", title: documents[0].title, children: [.init(id: "reading", title: documents[2].title, children: [])])],
             "ideas": [.init(id: "field-notes", title: documents[1].title, children: [])]
         ]
+        func journalPage(_ id: String, _ title: String, _ text: String, parent: String,
+                         children: [OutlineTreeNode] = []) -> OutlineTreeNode {
+            documents.append(.init(id: id, title: title, text: text, collectionId: "ideas", parentDocumentId: parent))
+            return .init(id: id, title: title, children: children)
+        }
+
         var entries: [OutlineTreeNode] = []
         for week in 1...30 {
-            let entry = OutlineDocument(id: "week-\(week)", title: "Week \(week) observations",
-                                        text: "## Research journal\n\nNotes from week \(week) of the reading study.", collectionId: "ideas")
-            documents.append(entry)
-            entries.append(.init(id: entry.id, title: entry.title, children: []))
+            let id = "week-\(week)"
+            var sessions: [OutlineTreeNode] = []
+            if week <= 3 {
+                for setting in ["Library", "Café", "Train"] {
+                    let sessionID = "\(id)-\(setting.lowercased())"
+                    let notesID = "\(sessionID)-notes"
+                    let quote = journalPage("\(notesID)-quote", "Reader quote",
+                                            "“I wanted to keep my place while checking the reference.”", parent: notesID)
+                    let notes = journalPage(notesID, "Interview notes",
+                                            "The reader kept a second page open during the session.", parent: sessionID, children: [quote])
+                    let followUp = journalPage("\(sessionID)-follow-up", "Follow-up questions",
+                                               "How did you find your place when you returned?", parent: sessionID)
+                    sessions.append(journalPage(sessionID, "\(setting) session", "Reading study at the \(setting.lowercased()).",
+                                                parent: id, children: [notes, followUp]))
+                }
+            }
+            entries.append(journalPage(id, "Week \(week) observations", "## Research journal\n\nNotes from week \(week) of the reading study.",
+                                       parent: "field-notes", children: sessions))
         }
         let closing = OutlineDocument(id: "closing-note", title: "Closing note",
                                       text: "[Return to the welcome page](https://margin.example/doc/welcome)", collectionId: "ideas",
