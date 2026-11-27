@@ -300,7 +300,7 @@ struct LibraryView: View {
                             if let nodes = workspace.trees[collection.id] {
                                 ForEach(sidebarRows(nodes), id: \.node.id) { row in
                                     let document = sidebarDocument(row.node, collectionID: collection.id)
-                                    HStack(alignment: .top, spacing: 8) {
+                                    HStack(spacing: 8) {
                                         if !row.node.children.isEmpty {
                                             Button {
                                                 if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
@@ -310,6 +310,8 @@ struct LibraryView: View {
                                             }.buttonStyle(.plain)
                                                 .accessibilityLabel("Children of " + row.node.title)
                                                 .accessibilityValue(expandedNodes.contains(row.node.id) ? "Expanded" : "Collapsed")
+                                        } else {
+                                            Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
                                         }
                                         Button { openSidebarDocument(document) } label: {
                                             HStack {
