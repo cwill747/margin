@@ -209,8 +209,11 @@ private struct PageIcon: View {
                icon.unicodeScalars.contains(where: { $0.properties.isEmoji }) {
                 Text(icon)
             } else {
-                let name = document.icon.map { Self.symbols[$0] ?? $0 } ?? fallback
-                Image(systemName: UIImage(systemName: name) == nil ? fallback : name)
+                let name = document.icon.map { icon in
+                    if let symbol = Self.symbols[icon] { return symbol }
+                    return UIImage(systemName: icon) == nil ? fallback : icon
+                } ?? fallback
+                Image(systemName: name)
                     .foregroundStyle(tint ?? .accentColor)
             }
         }.accessibilityHidden(true)
@@ -288,18 +291,18 @@ struct LibraryView: View {
             .accessibilityValue(workspace.expandedSections.contains(id) ? "Expanded" : "Collapsed")
             .accessibilityHint("Expand or collapse this collection")
     }
-    private func sidebarDocument(_ node: OutlineTreeNode, collectionID: String) -> OutlineDocument {
-        var document = workspace.documents.first(where: { $0.id == node.id }) ?? node.document(collectionID: collectionID)
+    private func sidebarDocument(_ node: OutlineTreeNode, collectionID: String, documentsByID: [String: OutlineDocument]) -> OutlineDocument {
+        var document = documentsByID[node.id] ?? node.document(collectionID: collectionID)
         document.icon = node.icon ?? document.icon
         document.color = node.color ?? document.color
         return document
     }
-    private func collectionSection(_ collection: OutlineCollection) -> some View {
+    private func collectionSection(_ collection: OutlineCollection, documentsByID: [String: OutlineDocument]) -> some View {
                         Section {
                             if workspace.expandedSections.contains(collection.id) {
                             if let nodes = workspace.trees[collection.id] {
                                 ForEach(sidebarRows(nodes), id: \.node.id) { row in
-                                    let document = sidebarDocument(row.node, collectionID: collection.id)
+                                    let document = sidebarDocument(row.node, collectionID: collection.id, documentsByID: documentsByID)
                                     HStack(spacing: compactSidebar ? 2 : 8) {
                                         if !row.node.children.isEmpty {
                                             Button {
@@ -331,7 +334,6 @@ struct LibraryView: View {
                                     .font(articleFont)
                                     .listRowInsets(articleInsets)
                                     .padding(.leading, dynamicTypeSize.isAccessibilitySize ? CGFloat(min(row.depth, 2)) * 8 : CGFloat(row.depth) * (compactSidebar ? 10 : 16))
-                                    .id(document.id)
                                     .listRowBackground(selected?.id == document.id ? palette.accent.opacity(0.15) : palette.surface)
                                     .contextMenu { Button("Keep beside", systemImage: "rectangle.split.2x1") { companion = document } }
                                 }
@@ -430,7 +432,8 @@ struct LibraryView: View {
         .keyboardShortcut("n", modifiers: .command)
     }
     private var sidebarContent: some View {
-        ScrollViewReader { proxy in
+        let documentsByID = Dictionary(workspace.documents.lazy.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ScrollViewReader { proxy in
             List {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").foregroundStyle(palette.secondary).accessibilityHidden(true)
@@ -448,7 +451,7 @@ struct LibraryView: View {
                 Group {
                 if query.isEmpty && !savedOnly {
                     ForEach(workspace.collections) { collection in
-                        collectionSection(collection)
+                        collectionSection(collection, documentsByID: documentsByID)
                     }
                     if !workspace.draftIDs.isEmpty {
                         Section {
