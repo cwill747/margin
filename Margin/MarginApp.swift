@@ -304,18 +304,6 @@ struct LibraryView: View {
                                 ForEach(sidebarRows(nodes), id: \.node.id) { row in
                                     let document = sidebarDocument(row.node, collectionID: collection.id, documentsByID: documentsByID)
                                     HStack(spacing: compactSidebar ? 2 : 8) {
-                                        if !row.node.children.isEmpty {
-                                            Button {
-                                                if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
-                                            } label: {
-                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right").font(.system(size: compactSidebar ? 13 : 17, weight: .semibold))
-                                                    .frame(width: 44, height: 44).contentShape(Rectangle())
-                                            }.buttonStyle(.plain)
-                                                .accessibilityLabel("Children of " + row.node.title)
-                                                .accessibilityValue(expandedNodes.contains(row.node.id) ? "Expanded" : "Collapsed")
-                                        } else {
-                                            Color.clear.frame(width: 44, height: 44).accessibilityHidden(true)
-                                        }
                                         Button { openSidebarDocument(document) } label: {
                                             HStack {
                                                 Group {
@@ -330,6 +318,16 @@ struct LibraryView: View {
                                         }.buttonStyle(.plain)
                                         .accessibilityAddTraits(selected?.id == document.id ? [.isSelected] : [])
                                         .accessibilityAction(named: "Keep beside") { companion = document }
+                                        if !row.node.children.isEmpty {
+                                            Button {
+                                                if !expandedNodes.insert(row.node.id).inserted { expandedNodes.remove(row.node.id) }
+                                            } label: {
+                                                Image(systemName: expandedNodes.contains(row.node.id) ? "chevron.down" : "chevron.right").font(.system(size: compactSidebar ? 13 : 17, weight: .semibold))
+                                                    .frame(width: 44, height: 44).contentShape(Rectangle())
+                                            }.buttonStyle(.plain)
+                                                .accessibilityLabel("Children of " + row.node.title)
+                                                .accessibilityValue(expandedNodes.contains(row.node.id) ? "Expanded" : "Collapsed")
+                                        }
                                     }
                                     .font(articleFont)
                                     .listRowInsets(articleInsets)
